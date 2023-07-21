@@ -50,7 +50,7 @@ Author: Hamlin Wu
 class HF_stagger_nsc(khf.KHF):
     def __init__(self, mf, frozen=None, flag_submesh=False):
         
-
+       #Some parameters.. we will see uses later
        self.cell = mf.cell
        self._scf = mf
        self.verbose = self.cell.verbose
@@ -67,4 +67,5 @@ class HF_stagger_nsc(khf.KHF):
 
        #Get orbitals and orbital energies on staggered mesh. Use Non-SCF approach here.
        nks = get_monkhorst_pack_size(mf.cell,mf.kpts)
+
 
