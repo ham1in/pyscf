@@ -859,6 +859,47 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
+def khf_stagger(mf, version = "Non_SCF"):
+    from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
+    if version == "One_shot":
+        raise NotImplementedError
+    elif version == "Two_shot:":
+        raise NotImplementedError
+    scf_res = mf
+    verbose = mf.cell.verbose
+
+    #Defining size
+    nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
+    shift = mf.cell.get_abs_kpts([0.5/n for n in nk])
+    shifted_mesh = mf.kpts + shift
+    # Get density matrix on the unshifted mesh
+    dm_un = mf.make_rdm1()
+    #Construct the Fock Matrix
+    h1e = get_hcore(mf, cell = mf.cell, kpts = shifted_mesh)
+    Jmat, Kmat = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = shifted_mesh)
+    Veff = Jmat - Kmat*.5
+    F_shift = h1e + Veff
+    s1e = get_ovlp(mf, cell = mf.cell, kpts = shifted_mesh)
+    mo_energy, mo_coeff = mf.eig(F_shift, s1e)
+    dm_shift = mf.make_rdm1(mo_coeff_kpts=mo_coeff)
+    #Computing the Staggered mesh energy
+    E_stagger = 0.0
+    Nk = np.prod(nk)
+    kj = Kmat.shape[0]
+    for i in range(0,kj):
+        for j in range(0,Kmat.shape[1]):
+            for k in range(0, Kmat.shape[1]):
+                E_stagger += Kmat[i,j,k]*dm_shift[i,j,k]
+
+    E_stagger = E_stagger*-1/(2*Nk)
+    #Madelung correction
+    #Standard exachange energy: do the same but use original K, P matrices
+    #
+
+    return np.real(E_stagger)
+
+
+
 
 if __name__ == '__main__':
     from pyscf.pbc import gto
