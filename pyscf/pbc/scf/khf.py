@@ -865,19 +865,25 @@ def khf_stagger(mf, version = "Non_SCF"):
         raise NotImplementedError
     elif version == "Two_shot:":
         raise NotImplementedError
-    scf_res = mf
-    verbose = mf.cell.verbose
-
-    #Defining size
+    #Defining size and making shifted mesh
     nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
     shift = mf.cell.get_abs_kpts([0.5/n for n in nk])
     shifted_mesh = mf.kpts + shift
-    # Get density matrix on the unshifted mesh
+    print(mf.kpts)
+    print(shifted_mesh)
+    # Get converged density matrix
     dm_un = mf.make_rdm1()
+    print("\n")
+    print("Converged Density Matrix")
+    for i in range(0,dm_un.shape[0]):
+        print("kpt: " + str(mf.kpts[i]) + "\n")
+        print(dm_un[i,:,:])
+
     #Construct the Fock Matrix
     h1e = get_hcore(mf, cell = mf.cell, kpts = shifted_mesh)
     Jmat, Kmat = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = shifted_mesh)
-    Veff = Jmat - Kmat*.5
+    #Veff = Jmat - Kmat/2
+    Veff = mf.get_veff(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = shifted_mesh)
     F_shift = h1e + Veff
     s1e = get_ovlp(mf, cell = mf.cell, kpts = shifted_mesh)
     mo_energy, mo_coeff = mf.eig(F_shift, s1e)
@@ -892,13 +898,79 @@ def khf_stagger(mf, version = "Non_SCF"):
                 E_stagger += Kmat[i,j,k]*dm_shift[i,j,k]
 
     E_stagger = E_stagger*-1/(2*Nk)
-    #Madelung correction
-    #Standard exachange energy: do the same but use original K, P matrices
-    #
+    #Standard Exchange energy
+    E_standard = 0.0
+    Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
+    for i in range(0,kj):
+        for j in range(0,Ko.shape[1]):
+            for k in range(0, Ko.shape[1]):
+                E_standard += Ko[i,j,k]*dm_un[i,j,k]
 
-    return np.real(E_stagger)
+    E_standard = E_standard*-1/(2*Nk)
 
+    #Madelung Correction - ommitting short range components
+    from pyscf.pbc.tools import madelung
+    #Assume that cell.omega is set to 0. Currently not sure how the other implementation works
+    #Obtain total madelung and modify according to terms needing to be removed
+    Madelung = madelung(mf.cell, shifted_mesh)
+    def set_cell(mf):
+        import copy
+        Nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
+        ecell = copy.copy(mf.cell)
+        ecell._atm = np.array([[1, mf.cell._env.size, 0, 0, 0, 0]])
+        ecell._env = np.append(mf.cell._env, [0., 0., 0.])
+        ecell.unit = 'B'
+        # ecell.verbose = 0
+        ecell.a = np.einsum('xi,x->xi', mf.cell.lattice_vectors(), Nk)
+        ecell.mesh = np.asarray(mf.cell.mesh) * Nk
+        return ecell
 
+    #Above just to make sure the cell is the same
+    #Modify ewald
+    def modify_ewald(cell, ew_eta = None, ew_cut = None ):
+        from scipy import special
+        if cell.a is None:
+            return mole.energy_nuc(cell)
+
+        if cell.natm == 0:
+            return 0
+
+        chargs = cell.atom_charges()
+
+        if ew_eta is None or ew_cut is None:
+            ew_eta, ew_cut = cell.get_ewald_params()
+        log_precision = np.log(cell.precision / (chargs.sum() * 16 * np.pi ** 2))
+        ke_cutoff = -2 * ew_eta ** 2 * log_precision
+        mesh = cell.cutoff_to_mesh(ke_cutoff)
+        logger.debug1(cell, 'mesh for ewald %s', mesh)
+
+        coords = cell.atom_coords()
+        Lall = cell.get_lattice_Ls(rcut=ew_cut)
+
+        rLij = coords[:, None, :] - coords[None, :, :] + Lall[:, None, None, :]
+        r = np.sqrt(np.einsum('Lijx,Lijx->Lij', rLij, rLij))
+        rLij = None
+        r[r < 1e-16] = 1e200
+        ewovrl = .5 * np.einsum('i,j,Lij->', chargs, chargs, scipy.special.erfc(ew_eta * r) / r)
+
+        subterm = 0
+        if cell.dimension == 3:
+            subterm += -.5 * np.sum(chargs) ** 2 * np.pi / (ew_eta ** 2 * cell.vol)
+
+        return ewovrl, subterm
+
+    mf.kpts = shifted_mesh
+    ecell = set_cell(mf)
+    Madelung *=-1
+    print(Madelung)
+    ew_eta, ew_cut = ecell.get_ewald_params(mf.cell.precision, mf.cell.mesh)
+    ewovrl, subterm = modify_ewald(ecell, ew_eta, ew_cut)
+    print(subterm + ewovrl)
+    Madelung -= 2*(subterm + ewovrl)
+    nocc = mf.cell.tot_electrons()//2
+    print(nocc)
+    E_stagger_M = E_stagger + nocc*Madelung
+    return np.real(E_stagger_M), np.real(E_stagger), np.real(E_standard)
 
 
 if __name__ == '__main__':
