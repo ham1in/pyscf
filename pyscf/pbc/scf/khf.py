@@ -918,7 +918,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
 
         count_iter = 1
         ecell = set_cell(mf)
-        ew_eta, ew_cut = ecell.get_ewald_params(mf.cell.precision, mf.cell.mesh)
+        ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
         while True:
