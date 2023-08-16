@@ -877,7 +877,9 @@ def khf_stagger(mf, version = "Non_SCF"):
     print("Converged Density Matrix")
     for i in range(0,dm_un.shape[0]):
         print("kpt: " + str(mf.kpts[i]) + "\n")
-        print(dm_un[i,:,:])
+        mat = dm_un[i,:,:]
+        for j in mat:
+            print(' '.join(str(np.real(el)) for el in j))
 
     #Construct the Fock Matrix
     h1e = get_hcore(mf, cell = mf.cell, kpts = shifted_mesh)
@@ -892,27 +894,20 @@ def khf_stagger(mf, version = "Non_SCF"):
     E_stagger = 0.0
     Nk = np.prod(nk)
     kj = Kmat.shape[0]
-    for i in range(0,kj):
-        for j in range(0,Kmat.shape[1]):
-            for k in range(0, Kmat.shape[1]):
-                E_stagger += Kmat[i,j,k]*dm_shift[i,j,k]
-
-    E_stagger = E_stagger*-1/(2*Nk)
+    E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
+    #Mysterious
+    E_stagger/=2
     #Standard Exchange energy
     E_standard = 0.0
     Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
-    for i in range(0,kj):
-        for j in range(0,Ko.shape[1]):
-            for k in range(0, Ko.shape[1]):
-                E_standard += Ko[i,j,k]*dm_un[i,j,k]
-
-    E_standard = E_standard*-1/(2*Nk)
-
+    E_standard = -1./Nk * np.einsum('kij,kji', dm_un,Ko ) * 0.5
+    #Currently mysterious factor of 2
+    E_standard /=2
+    #Staggered now agrees!
     #Madelung Correction - ommitting short range components
     from pyscf.pbc.tools import madelung
     #Assume that cell.omega is set to 0. Currently not sure how the other implementation works
     #Obtain total madelung and modify according to terms needing to be removed
-    Madelung = madelung(mf.cell, shifted_mesh)
     def set_cell(mf):
         import copy
         Nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
@@ -927,8 +922,21 @@ def khf_stagger(mf, version = "Non_SCF"):
 
     #Above just to make sure the cell is the same
     #Modify ewald
-    def modify_ewald(cell, ew_eta = None, ew_cut = None ):
-        from scipy import special
+    def modify_ewald(cell, ew_eta=None, ew_cut=None):
+        from scipy.special import erfc
+        '''Perform real (R) and reciprocal (G) space Ewald sum for the energy.
+
+        Formulation of Martin, App. F2.
+
+        Returns:
+            float
+                The Ewald energy consisting of overlap, self, and G-space sum.
+
+        See Also:
+            pyscf.pbc.gto.get_ewald_params
+        '''
+        # If lattice parameter is not set, the cell object is treated as a mole
+        # object. The nuclear repulsion energy is computed.
         if cell.a is None:
             return mole.energy_nuc(cell)
 
@@ -951,25 +959,107 @@ def khf_stagger(mf, version = "Non_SCF"):
         r = np.sqrt(np.einsum('Lijx,Lijx->Lij', rLij, rLij))
         rLij = None
         r[r < 1e-16] = 1e200
-        ewovrl = .5 * np.einsum('i,j,Lij->', chargs, chargs, scipy.special.erfc(ew_eta * r) / r)
+        ewovrl = .5 * np.einsum('i,j,Lij->', chargs, chargs, erfc(ew_eta * r) / r)
 
+        # last line of Eq. (F.5) in Martin
+        ewself = -.5 * np.dot(chargs, chargs) * 2 * ew_eta / np.sqrt(np.pi)
         subterm = 0
         if cell.dimension == 3:
             subterm += -.5 * np.sum(chargs) ** 2 * np.pi / (ew_eta ** 2 * cell.vol)
 
-        return ewovrl, subterm
+        # g-space sum (using g grid) (Eq. (F.6) in Martin, but note errors as below)
+        # Eq. (F.6) in Martin is off by a factor of 2, the
+        # exponent is wrong (8->4) and the square is in the wrong place
+        #
+        # Formula should be
+        #   1/2 * 4\pi / Omega \sum_I \sum_{G\neq 0} |ZS_I(G)|^2 \exp[-|G|^2/4\eta^2]
+        # where
+        #   ZS_I(G) = \sum_a Z_a exp (i G.R_a)
+
+        Gv, Gvbase, weights = cell.get_Gv_weights(mesh)
+        absG2 = np.einsum('gi,gi->g', Gv, Gv)
+        absG2[absG2 == 0] = 1e200
+
+        if cell.dimension != 2 or cell.low_dim_ft_type == 'inf_vacuum':
+            # TODO: truncated Coulomb for 0D. The non-uniform grids for inf-vacuum
+            # have relatively large error
+            coulG = 4 * np.pi / absG2
+            coulG *= weights
+            ZSI = np.einsum("i,ij->j", chargs, cell.get_SI(Gv))
+            ZexpG2 = ZSI * np.exp(-absG2 / (4 * ew_eta ** 2))
+            ewg = .5 * np.einsum('i,i,i', ZSI.conj(), ZexpG2, coulG).real
+
+        elif cell.dimension == 2:  # Truncated Coulomb
+            # The following 2D ewald summation is taken from:
+            # R. Sundararaman and T. Arias PRB 87, 2013
+            def fn(eta, Gnorm, z):
+                Gnorm_z = Gnorm * z
+                large_idx = Gnorm_z > 20.0
+                ret = np.zeros_like(Gnorm_z)
+                x = Gnorm / 2. / eta + eta * z
+                with np.errstate(over='ignore'):
+                    erfcx = erfc(x)
+                    ret[~large_idx] = np.exp(Gnorm_z[~large_idx]) * erfcx[~large_idx]
+                    ret[large_idx] = np.exp((Gnorm * z - x ** 2)[large_idx]) * erfcx[large_idx]
+                return ret
+
+            def gn(eta, Gnorm, z):
+                return np.pi / Gnorm * (fn(eta, Gnorm, z) + fn(eta, Gnorm, -z))
+
+            def gn0(eta, z):
+                return -2 * np.pi * (z * erf(eta * z) + np.exp(-(eta * z) ** 2) / eta / np.sqrt(np.pi))
+
+            b = cell.reciprocal_vectors()
+            inv_area = np.linalg.norm(np.cross(b[0], b[1])) / (2 * np.pi) ** 2
+            # Perform the reciprocal space summation over  all reciprocal vectors
+            # within the x,y plane.
+            planarG2_idx = np.logical_and(Gv[:, 2] == 0, absG2 > 0.0)
+            Gv = Gv[planarG2_idx]
+            absG2 = absG2[planarG2_idx]
+            absG = absG2 ** (0.5)
+            # Performing the G != 0 summation.
+            rij = coords[:, None, :] - coords[None, :, :]
+            Gdotr = np.einsum('ijx,gx->ijg', rij, Gv)
+            ewg = np.einsum('i,j,ijg,ijg->', chargs, chargs, np.cos(Gdotr),
+                            gn(ew_eta, absG, rij[:, :, 2:3]))
+            # Performing the G == 0 summation.
+            ewg += np.einsum('i,j,ij->', chargs, chargs, gn0(ew_eta, rij[:, :, 2]))
+            ewg *= inv_area * 0.5
+
+        else:
+            logger.warn(cell, 'No method for PBC dimension %s, dim-type %s.'
+                              '  cell.low_dim_ft_type="inf_vacuum"  should be set.',
+                        cell.dimension, cell.low_dim_ft_type)
+            raise NotImplementedError
+
+        logger.debug(cell, 'Ewald components = %.15g, %.15g, %.15g', ewovrl, ewself, ewg)
+        return ewovrl, ewself , ewg, subterm
 
     mf.kpts = shifted_mesh
+    count_iter = 1
     ecell = set_cell(mf)
-    Madelung *=-1
-    print(Madelung)
     ew_eta, ew_cut = ecell.get_ewald_params(mf.cell.precision, mf.cell.mesh)
-    ewovrl, subterm = modify_ewald(ecell, ew_eta, ew_cut)
-    print(subterm + ewovrl)
-    Madelung -= 2*(subterm + ewovrl)
+    prev = 0
+    conv_Madelung = 0
+    while True:
+        ewovrl, ewself, ewg, subterm = modify_ewald(ecell, ew_eta, ew_cut)
+        Madelung = 2*(ewself + ewg)
+        print("Iteration number " + str(count_iter))
+        print("Madelung:" + str(Madelung))
+        print("Eta:" + str(ew_eta))
+        if count_iter>1 and abs(Madelung-prev)<1e-8:
+            conv_Madelung = Madelung
+            break
+        if count_iter>30:
+            print("Error. Madelung constant not converged")
+            break
+        ew_eta*=2
+        count_iter+=1
+        prev = Madelung
+
     nocc = mf.cell.tot_electrons()//2
     print(nocc)
-    E_stagger_M = E_stagger + nocc*Madelung
+    E_stagger_M = E_stagger + nocc*conv_Madelung
     return np.real(E_stagger_M), np.real(E_stagger), np.real(E_standard)
 
 
