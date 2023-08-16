@@ -917,7 +917,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         E_stagger /= 2
 
         count_iter = 1
-        ecell = set_cell(mf)
+        ecell = set_cell(mf2)
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
@@ -936,7 +936,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
             count_iter += 1
             prev = Madelung
 
-        nocc = mf.cell.tot_electrons() // 2
+        nocc = mf2.cell.tot_electrons() // 2
         E_stagger_M = E_stagger + nocc * conv_Madelung
         print("One Shot")
         return np.real(E_stagger_M), np.real(E_stagger)
