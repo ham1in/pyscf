@@ -859,55 +859,12 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(mf, version = "Non_SCF"):
+def khf_stagger(icell,ikpts, version = "Non_SCF"):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
-    if version == "One_shot":
-        raise NotImplementedError
-    elif version == "Two_shot:":
-        raise NotImplementedError
-    #Defining size and making shifted mesh
-    nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
-    shift = mf.cell.get_abs_kpts([0.5/n for n in nk])
-    shifted_mesh = mf.kpts + shift
-    print(mf.kpts)
-    print(shifted_mesh)
-    # Get converged density matrix
-    dm_un = mf.make_rdm1()
-    print("\n")
-    print("Converged Density Matrix")
-    for i in range(0,dm_un.shape[0]):
-        print("kpt: " + str(mf.kpts[i]) + "\n")
-        mat = dm_un[i,:,:]
-        for j in mat:
-            print(' '.join(str(np.real(el)) for el in j))
-
-    #Construct the Fock Matrix
-    h1e = get_hcore(mf, cell = mf.cell, kpts = shifted_mesh)
-    Jmat, Kmat = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = shifted_mesh)
-    #Veff = Jmat - Kmat/2
-    Veff = mf.get_veff(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = shifted_mesh)
-    F_shift = h1e + Veff
-    s1e = get_ovlp(mf, cell = mf.cell, kpts = shifted_mesh)
-    mo_energy, mo_coeff = mf.eig(F_shift, s1e)
-    dm_shift = mf.make_rdm1(mo_coeff_kpts=mo_coeff)
-    #Computing the Staggered mesh energy
-    E_stagger = 0.0
-    Nk = np.prod(nk)
-    kj = Kmat.shape[0]
-    E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
-    #Mysterious
-    E_stagger/=2
-    #Standard Exchange energy
-    E_standard = 0.0
-    Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
-    E_standard = -1./Nk * np.einsum('kij,kji', dm_un,Ko ) * 0.5
-    #Currently mysterious factor of 2
-    E_standard /=2
-    #Staggered now agrees!
-    #Madelung Correction - ommitting short range components
-    from pyscf.pbc.tools import madelung
-    #Assume that cell.omega is set to 0. Currently not sure how the other implementation works
-    #Obtain total madelung and modify according to terms needing to be removed
+    from pyscf.pbc import gto,scf
+    # Assume that cell.omega is set to 0. Currently not sure how the other implementation works
+    # Obtain total madelung and modify according to terms needing to be removed
+    # Above just to make sure the cell is the same
     def set_cell(mf):
         import copy
         Nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
@@ -919,9 +876,6 @@ def khf_stagger(mf, version = "Non_SCF"):
         ecell.a = np.einsum('xi,x->xi', mf.cell.lattice_vectors(), Nk)
         ecell.mesh = np.asarray(mf.cell.mesh) * Nk
         return ecell
-
-    #Above just to make sure the cell is the same
-    #Modify ewald/ Scratch, instead manually implement Stephen's formula to ensure match
     def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None):
         #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
@@ -949,30 +903,151 @@ def khf_stagger(mf, version = "Non_SCF"):
         return sum_term - sub_term
 
 
-    count_iter = 1
-    ecell = set_cell(mf)
-    ew_eta, ew_cut = ecell.get_ewald_params(mf.cell.precision, mf.cell.mesh)
-    prev = 0
-    conv_Madelung = 0
-    while True:
-        Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
-        print("Iteration number " + str(count_iter))
-        print("Madelung:" + str(Madelung))
-        print("Eta:" + str(ew_eta))
-        if count_iter>1 and abs(Madelung-prev)<1e-8:
-            conv_Madelung = Madelung
-            break
-        if count_iter>30:
-            print("Error. Madelung constant not converged")
-            break
-        ew_eta*=2
-        count_iter+=1
-        prev = Madelung
+    if version == "One_shot":
+        nk = get_monkhorst_pack_size(icell, ikpts)
+        shift = icell.get_abs_kpts([0.5 / n for n in nk])
+        shifted_mesh = ikpts + shift
+        combined = np.concatenate((shifted_mesh,ikpts),axis=0)
+        mf2 = scf.KHF(icell, combined)
+        print(mf2.kernel())
+        dm2 = mf2.make_rdm1()
+        _, Kmat = mf2.get_jk(cell=mf2.cell, dm_kpts=dm2, kpts=combined, kpts_band=combined)
+        Nk = np.prod(nk)
+        E_stagger = -1. / Nk * np.einsum('kij,kji', dm2, Kmat) * 0.5
+        E_stagger /= 2
 
-    nocc = mf.cell.tot_electrons()//2
-    print(nocc)
-    E_stagger_M = E_stagger + nocc*conv_Madelung
-    return np.real(E_stagger_M), np.real(E_stagger), np.real(E_standard)
+        count_iter = 1
+        ecell = set_cell(mf)
+        ew_eta, ew_cut = ecell.get_ewald_params(mf.cell.precision, mf.cell.mesh)
+        prev = 0
+        conv_Madelung = 0
+        while True:
+            Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
+            print("Iteration number " + str(count_iter))
+            print("Madelung:" + str(Madelung))
+            print("Eta:" + str(ew_eta))
+            if count_iter > 1 and abs(Madelung - prev) < 1e-8:
+                conv_Madelung = Madelung
+                break
+            if count_iter > 30:
+                print("Error. Madelung constant not converged")
+                break
+            ew_eta *= 2
+            count_iter += 1
+            prev = Madelung
+
+        nocc = mf.cell.tot_electrons() // 2
+        E_stagger_M = E_stagger + nocc * conv_Madelung
+        print("One Shot")
+        return np.real(E_stagger_M), np.real(E_stagger)
+
+    elif version == "Two_shot":
+        mfs = scf.KHF(icell, ikpts)
+        print(mfs.kernel())
+        nk = get_monkhorst_pack_size(mfs.cell, mfs.kpts)
+        shift = mfs.cell.get_abs_kpts([0.5 / n for n in nk])
+        shifted_mesh = mfs.kpts + shift
+        mf2 = scf.KHF(icell, shifted_mesh)
+        print(mf2.kernel())
+        dm_2 = mf2.make_rdm1()
+        _, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_2, kpts = mf2.kpts, kpts_band = shifted_mesh )
+        Nk = np.prod(nk)
+        E_stagger = -1. / Nk * np.einsum('kij,kji', dm_2, Kmat) * 0.5
+        E_stagger/=2
+
+        count_iter = 1
+        ecell = set_cell(mf2)
+        ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
+        prev = 0
+        conv_Madelung = 0
+        while True:
+            Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
+            print("Iteration number " + str(count_iter))
+            print("Madelung:" + str(Madelung))
+            print("Eta:" + str(ew_eta))
+            if count_iter > 1 and abs(Madelung - prev) < 1e-8:
+                conv_Madelung = Madelung
+                break
+            if count_iter > 30:
+                print("Error. Madelung constant not converged")
+                break
+            ew_eta *= 2
+            count_iter += 1
+            prev = Madelung
+
+        nocc = mf2.cell.tot_electrons() // 2
+        E_stagger_M = E_stagger + nocc * conv_Madelung
+
+        #_, Ko = mf.get_jk(cell=mf.cell, kpts=mf.kpts, kpts_band=mf.kpts)
+        #E_standard = -1. / Nk * np.einsum('kij,kji', mf.make_rdm1(), Ko) * 0.5
+        #E_standard /= 2
+        print("Two Shot")
+        return np.real(E_stagger_M), np.real(E_stagger)
+    else:
+        mf2 = scf.KHF(icell,ikpts)
+        print(mf2.kernel())
+        #Defining size and making shifted mesh
+        nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
+        shift = mf2.cell.get_abs_kpts([0.5/n for n in nk])
+        shifted_mesh = mf2.kpts + shift
+        print(mf2.kpts)
+        print(shifted_mesh)
+        # Get converged density matrix
+        dm_un = mf2.make_rdm1()
+        print("\n")
+        print("Converged Density Matrix")
+        for i in range(0,dm_un.shape[0]):
+            print("kpt: " + str(mf2.kpts[i]) + "\n")
+            mat = dm_un[i,:,:]
+            for j in mat:
+                print(' '.join(str(np.real(el)) for el in j))
+
+        #Construct the Fock Matrix
+        h1e = get_hcore(mf2, cell = mf2.cell, kpts = shifted_mesh)
+        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
+        #Veff = Jmat - Kmat/2
+        Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
+        F_shift = h1e + Veff
+        s1e = get_ovlp(mf2, cell = mf2.cell, kpts = shifted_mesh)
+        mo_energy, mo_coeff = mf2.eig(F_shift, s1e)
+        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff)
+        #Computing the Staggered mesh energy
+        Nk = np.prod(nk)
+        E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
+        #Mysterious
+        E_stagger/=2
+        #Standard Exchange energy
+        #Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
+        #E_standard = -1./Nk * np.einsum('kij,kji', dm_un,Ko ) * 0.5
+        #Currently mysterious factor of 2
+        #E_standard /=2
+        #Staggered now agrees!
+        #Modify ewald/ Scratch, instead manually implement Stephen's formula to ensure match
+
+        count_iter = 1
+        ecell = set_cell(mf2)
+        ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
+        prev = 0
+        conv_Madelung = 0
+        while True:
+            Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
+            print("Iteration number " + str(count_iter))
+            print("Madelung:" + str(Madelung))
+            print("Eta:" + str(ew_eta))
+            if count_iter>1 and abs(Madelung-prev)<1e-8:
+                conv_Madelung = Madelung
+                break
+            if count_iter>30:
+                print("Error. Madelung constant not converged")
+                break
+            ew_eta*=2
+            count_iter+=1
+            prev = Madelung
+
+        nocc = mf2.cell.tot_electrons()//2
+        E_stagger_M = E_stagger + nocc*conv_Madelung
+        print("Non SCF")
+    return np.real(E_stagger_M), np.real(E_stagger)
 
 
 if __name__ == '__main__':
