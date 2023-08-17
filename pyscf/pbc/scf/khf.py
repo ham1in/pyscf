@@ -906,14 +906,17 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
     if version == "One_shot":
         nk = get_monkhorst_pack_size(icell, ikpts)
         shift = icell.get_abs_kpts([0.5 / n for n in nk])
+        print("Shift is: " + str(shift))
         shifted_mesh = ikpts + shift
-        combined = np.concatenate((shifted_mesh,ikpts),axis=0)
+        combined = np.concatenate((ikpts,shifted_mesh),axis=0)
+        print(combined)
+        #Error is in this SCF calculation - finding out what is going on
         mf2 = scf.KHF(icell, combined)
         print(mf2.kernel())
         dm2 = mf2.make_rdm1()
-        _, Kmat = mf2.get_jk(cell=mf2.cell, dm_kpts=dm2, kpts=combined)
-        Nk = np.prod(nk)
-        E_stagger = -1. / Nk * np.einsum('kij,kij', dm2, Kmat) * 0.5
+        _, Kmat = mf2.get_jk(cell=mf2.cell, dm_kpts= dm2, kpts=combined)
+        Nk = np.prod(nk)*2
+        E_stagger = -1. / Nk * np.einsum('kij,kji', dm2, Kmat) * 0.5
         E_stagger /= 2
 
         count_iter = 1
@@ -950,7 +953,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         mf2 = scf.KHF(icell, shifted_mesh)
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
-        _, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_2, kpts = mfs.kpts, kpts_band = mf2.kpts)
+        _, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = mfs.make_rdm1(), kpts = mfs.kpts, kpts_band = mf2.kpts)
         Nk = np.prod(nk)
         E_stagger = -1. / Nk * np.einsum('kij,kji', dm_2, Kmat) * 0.5
         E_stagger/=2
