@@ -862,9 +862,8 @@ del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 def khf_stagger(icell,ikpts, version = "Non_SCF"):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
-    # Assume that cell.omega is set to 0. Currently not sure how the other implementation works
-    # Obtain total madelung and modify according to terms needing to be removed
-    # Above just to make sure the cell is the same
+    #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
+    #Cell formatting used in the built in Madelung code
     def set_cell(mf):
         import copy
         Nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
@@ -876,6 +875,8 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ecell.a = np.einsum('xi,x->xi', mf.cell.lattice_vectors(), Nk)
         ecell.mesh = np.asarray(mf.cell.mesh) * Nk
         return ecell
+
+    #Function for Madelung constant calculation following formula in Stephen's paper
     def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None):
         #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
@@ -892,7 +893,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         G_combined = Gv + shifted
         #Calculate |q+G|^2 values of the shifted points
         qG2 = np.einsum('gi,gi->g',G_combined,G_combined)
-        #Note: Stephen - remove those points where q+G = 0, same proecedure in Xin's code
+        #Note: Stephen - remove those points where q+G = 0
         qG2[qG2==0] = 1e200
         #Now putting the ingredients together
         component = 4*np.pi/qG2*np.exp(-qG2/(4*ew_eta**2))
@@ -911,16 +912,20 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         shifted_mesh = ikpts + shift
         combined = np.concatenate((ikpts,shifted_mesh),axis=0)
         print(combined)
-        #Error is in this SCF calculation - finding out what is going on
+
         mf2 = scf.KHF(icell, combined)
         print(mf2.kernel())
         d_m = mf2.make_rdm1()
+        #Get dm at kpoints in unshifted mesh
         dm2 = d_m[:Nk//2,:,:]
+        #Get dm at kpoints in shifted mesh
         dm_shift = d_m[Nk//2:,:,:]
+        #K matrix on shifted mesh with potential defined by dm on unshifted mesh
         _, Kmat = mf2.get_jk(cell=mf2.cell, dm_kpts= dm2, kpts=ikpts, kpts_band = shifted_mesh)
         E_stagger = -1. / Nk * np.einsum('kij,kji', dm_shift, Kmat)
         E_stagger /= 2
 
+        #Madelung constant computation
         count_iter = 1
         mf2.kpts = ikpts
         ecell = set_cell(mf2)
@@ -932,7 +937,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
             print("Eta:" + str(ew_eta))
-            if count_iter > 1 and abs(Madelung - prev) < 1e-4:
+            if count_iter > 1 and abs(Madelung - prev) < 1e-8:
                 conv_Madelung = Madelung
                 break
             if count_iter > 30:
@@ -948,19 +953,23 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         return np.real(E_stagger_M), np.real(E_stagger)
 
     elif version == "Two_shot":
+        #Regular scf calculation
         mfs = scf.KHF(icell, ikpts)
         print(mfs.kernel())
         nk = get_monkhorst_pack_size(mfs.cell, mfs.kpts)
         shift = mfs.cell.get_abs_kpts([0.5 / n for n in nk])
         shifted_mesh = mfs.kpts + shift
+        #Calculation on shifted mesh
         mf2 = scf.KHF(icell, shifted_mesh)
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
+        #Get K matrix on shifted kpts, dm from unshifted mesh
         _, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = mfs.make_rdm1(), kpts = mfs.kpts, kpts_band = mf2.kpts)
         Nk = np.prod(nk)
         E_stagger = -1. / Nk * np.einsum('kij,kji', dm_2, Kmat) * 0.5
         E_stagger/=2
 
+        #Madelung calculation
         count_iter = 1
         ecell = set_cell(mf2)
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
@@ -984,9 +993,6 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         nocc = mf2.cell.tot_electrons() // 2
         E_stagger_M = E_stagger + nocc * conv_Madelung
 
-        #_, Ko = mf.get_jk(cell=mf.cell, kpts=mf.kpts, kpts_band=mf.kpts)
-        #E_standard = -1. / Nk * np.einsum('kij,kji', mf.make_rdm1(), Ko) * 0.5
-        #E_standard /= 2
         print("Two Shot")
         return np.real(E_stagger_M), np.real(E_stagger)
     else:
@@ -1020,15 +1026,11 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         #Computing the Staggered mesh energy
         Nk = np.prod(nk)
         E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
-        #Mysterious
         E_stagger/=2
         #Standard Exchange energy
         #Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
         #E_standard = -1./Nk * np.einsum('kij,kji', dm_un,Ko ) * 0.5
-        #Currently mysterious factor of 2
         #E_standard /=2
-        #Staggered now agrees!
-        #Modify ewald/ Scratch, instead manually implement Stephen's formula to ensure match
 
         count_iter = 1
         ecell = set_cell(mf2)
