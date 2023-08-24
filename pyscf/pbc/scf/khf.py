@@ -1088,7 +1088,9 @@ def khf_ss(icell, ikpts):
     #Note on structure - mo_energy is sorted into an array with array elements, each containing energies at each k-point.
     #Similarly, mo_coeff is an array with array elements, each which contains the coefficients for the wavefunctions at each k-point
     mo_energy, mo_coeff = mf.get_bands(ikpts)
-    #Evaluate wavefunction on all real space grid points
+    print(mo_energy)
+    nbands = len(mo_energy[0])
+    print("nbands is : " + str(nbands))
 
     #Lattice parameters
     LsCell = mf.cell.a
@@ -1106,6 +1108,20 @@ def khf_ss(icell, ikpts):
     L_incre = Lvec/NsCell[:,np.newaxis]
     #Get volume element
     dvol = np.abs(np.linalg.det(L_incre))
+    # Evaluate wavefunction on all real space grid points
+    #Establishing real space grid (Generalized for arbitary volume defined by 3 vectors)
+    X, Y, Z = np.meshgrid(np.arange(0, NsCell[0]), np.arange(0, NsCell[1]), np.arange(0, NsCell[2]), indexing='ij')
+    rptGrid3D = (X.flatten()[:, np.newaxis] * L_incre[0] + Y.flatten()[:, np.newaxis] * L_incre[1] + Z.flatten()[:, np.newaxis] * L_incre[2])
+
+    aoval = mf.cell.pbc_eval_gto("GTOval_sph", coords = rptGrid3D, kpts=ikpts)
+    for i in range(Nk):
+        for j in range(nbands):
+            utmp = mo_coeff[i]
+            normu = np.linalg.norm(utmp)
+            utmp /= (normu * np.sqrt(dvol))
+            
+
+
 
 
     #Singularity subtraction correction
