@@ -1057,6 +1057,91 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print("Non SCF")
     return np.real(E_stagger_M), np.real(E_stagger)
 
+def khf_ss(icell, ikpts):
+    from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
+    from pyscf.pbc import gto,scf
+    from pyscf.pbc.tools import madelung
+    #Workflow:
+    #1. Run a regular SCF calculation
+    #2. Implement the Madelung correction for the Exchange energy (Standard one?)
+    #3. Implement singularity subtraction
+
+    #Standard SCF calculation
+    mf = scf.KHF(icell,ikpts)
+    print(mf.kernel())
+    Madelung =  madelung(icell,ikpts)
+    #Assuming closed shell
+    nocc = mf.cell.tot_electrons()//2
+    nk = get_monkhorst_pack_size(mf.cell, mf.kpts)
+    Nk = np.prod(nk)
+    #Get the standard scf exchange energy
+    dm = mf.make_rdm1()
+    _, K = mf.get_jk(cell = mf.cell, dm_kpts = dm, kpts = mf.kpts, kpts_band = mf.kpts)
+    E_standard = -1./Nk * np.einsum('kij,kji', dm,K ) * 0.5
+    E_standard /=2
+
+    #Get the Madelung corrected exchange energy
+    E_Madelung = E_standard + nocc*Madelung
+
+    #Define quantities
+    #Get MO Coefficients
+    #Note on structure - mo_energy is sorted into an array with array elements, each containing energies at each k-point.
+    #Similarly, mo_coeff is an array with array elements, each which contains the coefficients for the wavefunctions at each k-point
+    mo_energy, mo_coeff = mf.get_bands(ikpts)
+    #Evaluate wavefunction on all real space grid points
+
+    #Lattice parameters
+    LsCell = mf.cell.a
+    Lvec_tmp = LsCell.split('\n')
+    Lvec = []
+    #Process cell vectors [a,b,c] where a,b,c are the relevant lattice parameters
+    for vec in Lvec_tmp:
+        if vec.strip():
+            components = vec.split()
+            vector = [float(component) for component in components]
+            Lvec.append(vector)
+    Lnorms = [sum(c** 2 for c in v) ** 0.5 for v in Lvec]
+    print(Lnorms)
+    NsCell = mf.cell.mesh
+    L_incre = Lvec/NsCell[:,np.newaxis]
+    #Get volume element
+    dvol = np.abs(np.linalg.det(L_incre))
+
+
+    #Singularity subtraction correction
+    def pair_product_recip_exchange(uKpt, kptGrid3D, LsCell, NsCell, nocc):
+        '''
+        NsCell will be the specified mesh
+        LsCell will be the length of the lattice vectors
+        kptGrid3D will be the k-point grid used in the calculation
+        ukpt** will be the wavefunction evaluated on all grid points.
+        nocc will be an occupation number
+
+        '''
+        test = 0
+        return test
+
+    def poly_localizer(x, r1, d):
+        x_normed = x / r1
+        r = np.sqrt(np.sum(x_normed ** 2, axis=1))
+        val = (1 - r ** d) ** d
+        val[r > 1] = 0
+        return val
+
+    def localizer(x, r0, r1):
+        r = np.sqrt(np.sum(x**2, axis=1))
+        val = np.exp(-1.0 / (r1 - r)) / (np.exp(-1.0 / (r - r0)) + np.exp(-1.0 / (r1 - r)))
+        val[r <= r0] = 1
+        val[r >= r1] = 0
+        return val
+
+    #rho_kqijG, _, qGrid = pair_product_recip_exchange(mo_coeff, ikpts, LsCell, NsCell, nocc)
+    #SqG = (1 / Nk) * np.sum(np.abs(rho_kqijG) ** 2, axis=(1, 3, 4)).reshape(rho_kqijG.shape[1], rho_kqijG.shape[5])
+    #SqG-=nocc
+
+
+
+
 
 if __name__ == '__main__':
     from pyscf.pbc import gto
