@@ -1088,23 +1088,29 @@ def khf_ss(icell, ikpts):
     #Note on structure - mo_energy is sorted into an array with array elements, each containing energies at each k-point.
     #Similarly, mo_coeff is an array with array elements, each which contains the coefficients for the wavefunctions at each k-point
     mo_energy, mo_coeff = mf.get_bands(ikpts)
+    print(mo_coeff)
     print(mo_energy)
+    print(np.shape(mo_coeff))
     nbands = len(mo_energy[0])
     print("nbands is : " + str(nbands))
 
     #Lattice parameters
     LsCell = mf.cell.a
     Lvec_tmp = LsCell.split('\n')
-    Lvec = []
+    Lvec = mf.cell.lattice_vectors()
+    print(Lvec)
+    #Lvec = []
     #Process cell vectors [a,b,c] where a,b,c are the relevant lattice parameters
-    for vec in Lvec_tmp:
-        if vec.strip():
-            components = vec.split()
-            vector = [float(component) for component in components]
-            Lvec.append(vector)
+    #for vec in Lvec_tmp:
+        #if vec.strip():
+            #components = vec.split()
+            #vector = [float(component) for component in components]
+            #Lvec.append(vector)
     Lnorms = [sum(c** 2 for c in v) ** 0.5 for v in Lvec]
     print(Lnorms)
     NsCell = mf.cell.mesh
+    #NsCell = nk
+    #NsCell = [nbands,nbands,nbands]
     L_incre = Lvec/NsCell[:,np.newaxis]
     #Get volume element
     dvol = np.abs(np.linalg.det(L_incre))
@@ -1112,30 +1118,55 @@ def khf_ss(icell, ikpts):
     #Establishing real space grid (Generalized for arbitary volume defined by 3 vectors)
     X, Y, Z = np.meshgrid(np.arange(0, NsCell[0]), np.arange(0, NsCell[1]), np.arange(0, NsCell[2]), indexing='ij')
     rptGrid3D = (X.flatten()[:, np.newaxis] * L_incre[0] + Y.flatten()[:, np.newaxis] * L_incre[1] + Z.flatten()[:, np.newaxis] * L_incre[2])
-
     aoval = mf.cell.pbc_eval_gto("GTOval_sph", coords = rptGrid3D, kpts=ikpts)
+    print(np.shape(aoval))
+    #ATTENTION NEEDED. Normalization factors etc. Is ukpt simply MO evaluated at grid points?
+    uKpts = np.zeros((Nk, np.prod(NsCell), nbands))
+    print(np.shape(uKpts))
     for i in range(Nk):
         for j in range(nbands):
-            utmp = mo_coeff[i]
-            normu = np.linalg.norm(utmp)
-            utmp /= (normu * np.sqrt(dvol))
-            
-
-
-
-
+            utmp = np.real(mo_coeff[i])
+            utmp = aoval[i] * utmp[j,:]
+            utmp = np.real(np.sum(utmp,axis =1,keepdims = True))
+            utmp = np.squeeze(utmp)
+            uKpts[i, :, j] = utmp
     #Singularity subtraction correction
-    def pair_product_recip_exchange(uKpt, kptGrid3D, LsCell, NsCell, nocc):
+    print(uKpts.shape[1])
+    def pair_product_recip_exchange(uKpt, kptGrid3D, cell, nbands):
         '''
-        NsCell will be the specified mesh
+        NsCell will be the specified mesh (Different from k-point one)
         LsCell will be the length of the lattice vectors
         kptGrid3D will be the k-point grid used in the calculation
         ukpt** will be the wavefunction evaluated on all grid points.
         nocc will be an occupation number
-
         '''
-        test = 0
-        return test
+        qGrid = kptGrid3D - kptGrid3D[0,:]
+        kGrid = kptGrid3D
+        nkpt = kGrid.shape[0]
+        LsCell_bz = cell.reciprocal_vectors()
+        for q in range(nkpt):
+            qpt = qGrid[q,:]
+            #Get rid of multiples of recip vectors
+            for i in range(len(LsCell_bz)):
+                qpt = qpt - np.floor((np.dot(qpt,LsCell_bz[i]) + 1e-12)/np.dot(LsCell_bz[i] * LsCell_bz[i])) * LsCell_bz[i]
+            #Bring into first Brillouin zone
+            qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T) >= 0.5, 1, 0) @ LsCell_bz
+            #Update qGrid
+            qGrid[q,:] = qpt
+
+        nG = uKpts.shape[1]
+        rhokqmnG = np.zeros(nkpt,nkpt,nbands,nbands, nG)
+
+        for k in range(nkpt):
+            for q in range(nkpt):
+                kpt1 = kGrid[k,:]
+                qpt = qGrid[q,:]
+                kpt2 = kpt1 + qpt
+                for i in range(len(LsCell_bz)):
+                    kpt2 = kpt2 - np.floor((np.dot(kpt2,LsCell_bz[i]) + 1e-12)/np.dot(LsCell_bz[i] * LsCell_bz[i])) * LsCell_bz[i]
+                
+
+        return rhokqmnG, kGrid, qGrid
 
     def poly_localizer(x, r1, d):
         x_normed = x / r1
