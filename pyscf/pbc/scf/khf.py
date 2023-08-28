@@ -1117,17 +1117,24 @@ def khf_ss(icell, ikpts):
     rptGrid3D = (X.flatten()[:, np.newaxis] * L_incre[0] + Y.flatten()[:, np.newaxis] * L_incre[1] + Z.flatten()[:, np.newaxis] * L_incre[2])
     aoval = mf.cell.pbc_eval_gto("GTOval_sph", coords = rptGrid3D, kpts=ikpts)
     print(np.shape(aoval))
-    #ATTENTION NEEDED. Normalization factors etc. Is ukpt simply MO evaluated at grid points?
-    uKpts = np.zeros((Nk, np.prod(NsCell), nbands))
+    #ATTENTION NEEDED. What to normalize to? 1, or |prod(NsCell)|/|BZ|
+    uKpts = np.zeros((Nk, np.prod(NsCell), nbands),dtype = complex)
     print(np.shape(uKpts))
+    uKpts_norms = np.zeros((Nk,np.prod(NsCell),nbands),dtype = complex)
     for i in range(Nk):
         for j in range(nbands):
-            utmp = np.real(mo_coeff[i])
-
-            utmp = aoval[i] * utmp[j,:]
-            utmp = np.real(np.sum(utmp,axis =1,keepdims = True))
+            utmp = mo_coeff[i]
+            utmp = aoval[i] * utmp[:,j]
+            print(utmp)
+            utmp = np.sum(utmp,axis =1,keepdims = True)
             utmp = np.squeeze(utmp)
+            exp_part = np.squeeze(np.exp(-1j* np.dot(ikpts[i],rptGrid3D.T)))
+            utmp = exp_part * utmp
             uKpts[i, :, j] = utmp
+            print(uKpts[i,:,j])
+
+    #Check norm
+    print(np.prod(NsCell)/np.abs(np.linalg.det(mf.cell.reciprocal_vectors())))
     #Singularity subtraction correction
     print(uKpts.shape[1])
     def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, nbands):
@@ -1153,7 +1160,7 @@ def khf_ss(icell, ikpts):
             qGrid[q,:] = qpt
 
         nG = uKpts.shape[1]
-        rhokqmnG = np.zeros((nkpt,nkpt,nbands,nbands, nG))
+        rhokqmnG = np.zeros((nkpt,nkpt,nbands,nbands, nG),dtype = complex)
 
         for k in range(nkpt):
             for q in range(nkpt):
