@@ -1109,18 +1109,18 @@ def khf_ss(icell, ikpts):
     #NsCell = nk
     #NsCell = [nbands,nbands,nbands]
     L_incre = Lvec/NsCell[:,np.newaxis]
-    #Get volume element (Not used yet .. needed?)
+    #Get volume element
     dvol = np.abs(np.linalg.det(L_incre))
     # Evaluate wavefunction on all real space grid points
     #Establishing real space grid (Generalized for arbitary volume defined by 3 vectors)
     X, Y, Z = np.meshgrid(np.arange(0, NsCell[0]), np.arange(0, NsCell[1]), np.arange(0, NsCell[2]), indexing='ij')
     rptGrid3D = (X.flatten()[:, np.newaxis] * L_incre[0] + Y.flatten()[:, np.newaxis] * L_incre[1] + Z.flatten()[:, np.newaxis] * L_incre[2])
+    print(rptGrid3D)
     aoval = mf.cell.pbc_eval_gto("GTOval_sph", coords = rptGrid3D, kpts=ikpts)
     print(np.shape(aoval))
-    #ATTENTION NEEDED. What to normalize to? 1, or |prod(NsCell)|/|BZ|
+    #ATTENTION NEEDED. What to normalize to? 1 (Right order of magnitude, but incorrect?), or |prod(NsCell)|/|BZ| (Blows up)
     uKpts = np.zeros((Nk, np.prod(NsCell), nbands),dtype = complex)
     print(np.shape(uKpts))
-    uKpts_norms = np.zeros((Nk,np.prod(NsCell),nbands),dtype = complex)
     for i in range(Nk):
         for j in range(nbands):
             utmp = mo_coeff[i]
@@ -1134,9 +1134,9 @@ def khf_ss(icell, ikpts):
             print(uKpts[i,:,j])
 
     #Check norm
-    print(np.prod(NsCell)/np.abs(np.linalg.det(mf.cell.reciprocal_vectors())))
+    #print(np.sum(np.conj(uKpts[4,:,0]) * uKpts[4,:,0])*dvol)
     #Singularity subtraction correction
-    print(uKpts.shape[1])
+    print(ikpts)
     def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, nbands):
         '''
         NsCell will be the specified mesh (Different from k-point one)
@@ -1149,16 +1149,21 @@ def khf_ss(icell, ikpts):
         kGrid = kptGrid3D
         nkpt = kGrid.shape[0]
         LsCell_bz = cell.reciprocal_vectors()
+        print(LsCell_bz)
+        print(kGrid)
+        #NEEDS DEBUGGING. All are becoming negative - what is going on? A: Mesh might not be big enough, but I think this is doing what it should.. (almost)
         for q in range(nkpt):
             qpt = qGrid[q,:]
+            #print(qpt)
             #Get rid of multiples of recip vectors
             for i in range(len(LsCell_bz)):
-                qpt = qpt - np.floor((np.dot(qpt,LsCell_bz[i]) + 1e-12)/np.dot(LsCell_bz[i],LsCell_bz[i])) * LsCell_bz[i]
+                qpt = qpt - np.floor((np.dot(qpt,LsCell_bz[i]) + 1e-12)/np.sqrt(np.dot(LsCell_bz[i],LsCell_bz[i]))) * LsCell_bz[i]
             #Bring into first Brillouin zone
-            qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T) >= 0.5, 1, 0) @ LsCell_bz
+            qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T)/np.linalg.norm(LsCell_bz,axis=1) >= 0.5, 1, 0) @ LsCell_bz
             #Update qGrid
             qGrid[q,:] = qpt
 
+        #print(qGrid)
         nG = uKpts.shape[1]
         rhokqmnG = np.zeros((nkpt,nkpt,nbands,nbands, nG),dtype = complex)
 
@@ -1168,7 +1173,7 @@ def khf_ss(icell, ikpts):
                 qpt = qGrid[q,:]
                 kpt2 = kpt1 + qpt
                 for i in range(len(LsCell_bz)):
-                    kpt2 = kpt2 - np.floor((np.dot(kpt2,LsCell_bz[i]) + 1e-12)/np.dot(LsCell_bz[i],LsCell_bz[i])) * LsCell_bz[i]
+                    kpt2 = kpt2 - np.floor((np.dot(kpt2,LsCell_bz[i]) + 1e-12)/np.sqrt(np.dot(LsCell_bz[i],LsCell_bz[i]))) * LsCell_bz[i]
 
                 d2 = np.sum((kGrid - kpt2) ** 2, axis=1)
                 idx_kpt2 = np.where(d2 < 1e-12)[0]
@@ -1181,7 +1186,7 @@ def khf_ss(icell, ikpts):
                 for n in range(nbands):
                     for m in range(nbands):
                         u1 = uKpt[k,:,n]
-                        u2 = np.exp(-1j * (np.dot(rptGrid3D, kGdiff))) * uKpt[idx_kpt2,:,m]
+                        u2 = np.exp(-1j * (np.dot(rptGrid3D, kGdiff.T))) * uKpt[idx_kpt2,:,m]
                         rho12 = np.conj(u1) * u2
                         rho12 = rho12.reshape(NsCell[0], NsCell[1], NsCell[2])
                         rhokqmnG[k,q,n,m,:] = np.fft.fftn(rho12*dvol).flatten()
@@ -1216,7 +1221,7 @@ def khf_ss(icell, ikpts):
     cell_grid_bz = (Xbz.flatten()[:, np.newaxis] * LsCell_bz[0] + Ybz.flatten()[:, np.newaxis] * LsCell_bz[1] + Zbz.flatten()[:, np.newaxis] * LsCell_bz[2])
 
     #Localizer support setting
-    N_local = 5
+    N_local = 11
     #Establish Localizer grid
     LsCell_bz_local = N_local * LsCell_bz
     #Grid_1Dp = np.arange(0, (N_local - 1) // 2 + 1)
@@ -1225,10 +1230,12 @@ def khf_ss(icell, ikpts):
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local + 1) // 2 + 1, 0)))
     Xl, Yl, Zl = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
     loc_grid = (Xl.flatten()[:, np.newaxis] * LsCell_bz[0] + Yl.flatten()[:, np.newaxis] * LsCell_bz[1] + Zl.flatten()[:, np.newaxis] * LsCell_bz[2])
+    print(loc_grid)
 
     LsCell_bz_local_norms = [sum(c** 2 for c in v) ** 0.5 for v in LsCell_bz_local]
     r0 = 0 * np.min(LsCell_bz_local_norms) /2
     r1 = 1 * np.min(LsCell_bz_local_norms) /2
+    print(r1)
 
     #H = lambda q: localizer(q, r0, r1)
     H = lambda q: poly_localizer(q,r1,4)
