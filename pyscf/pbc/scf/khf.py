@@ -1220,7 +1220,7 @@ def khf_ss(icell, ikpts):
     print("Recip lattice unit cell")
     print(cell_grid_bz)
     #Localizer support setting
-    N_local = 9
+    N_local = 5
     #Establish Localizer grid
     LsCell_bz_local = N_local * LsCell_bz
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local + 1) // 2 + 1, 0)))
