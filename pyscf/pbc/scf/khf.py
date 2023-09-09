@@ -1289,10 +1289,9 @@ def khf_ss(icell, ikpts):
         tmp = SqG[iq,:].T * H(qG) * tmp
         correction -= 1/Nk * np.real(np.sum(tmp))
 
+    print(correction)
     Ex_ss = E_standard + correction*4*np.pi/np.abs(np.linalg.det(Lvec))
     print(np.real(Ex_ss))
-    print(np.real(correction*4*np.pi/np.abs(np.linalg.det(Lvec))))
-    print(np.real(E_Madelung))
     print(np.real(E_standard))
     return Ex_ss
 
