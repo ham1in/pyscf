@@ -1061,14 +1061,15 @@ def khf_ss(icell, ikpts):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     from pyscf.pbc.tools import madelung
+    import time
     #Workflow:
     #1. Run a regular SCF calculation
     #2. Implement the Madelung correction for the Exchange energy (Standard one?)
     #3. Implement singularity subtraction
 
     #Standard SCF calculation
-    print(ikpts)
-    mf = scf.KHF(icell,ikpts)
+    tscf = time.time()
+    mf = scf.KHF(icell,ikpts,exxdiv = None)
     print(mf.kernel())
     Madelung =  madelung(icell,ikpts)
     #Assuming closed shell
@@ -1080,10 +1081,14 @@ def khf_ss(icell, ikpts):
     _, K = mf.get_jk(cell = mf.cell, dm_kpts = dm, kpts = mf.kpts, kpts_band = mf.kpts)
     E_standard = -1./Nk * np.einsum('kij,kji', dm,K ) * 0.5
     E_standard /=2
+    tscf2 = time.time()
+
+    time_scf = tscf2 - tscf
 
     #Get the Madelung corrected exchange energy
-    E_Madelung = E_standard + nocc*Madelung
+    E_Madelung = E_standard - nocc*Madelung
 
+    timess = time.time()
     #Define quantities
     #Get MO Coefficients
     #Note on structure - mo_energy is sorted into an array with array elements, each containing energies at each k-point.
@@ -1289,11 +1294,19 @@ def khf_ss(icell, ikpts):
         tmp = SqG[iq,:].T * H(qG) * tmp
         correction -= 1/Nk * np.real(np.sum(tmp))
 
+    timess2 = time.time()
+    timesub = timess2 - timess
     print(correction)
-    Ex_ss = E_standard + correction*4*np.pi/np.abs(np.linalg.det(Lvec))
+    Ex_ss = E_standard + correction*4*np.pi/np.abs(np.linalg.det(Lvec)) - nocc*Madelung
+    print("SS ENERGY")
     print(np.real(Ex_ss))
+    print("STANDARD")
     print(np.real(E_standard))
-    return Ex_ss
+    print("STANDARD MADELUNG")
+    print(np.real(E_Madelung))
+    print(time_scf)
+    print(timesub)
+    return np.real(Ex_ss), np.real(E_standard), np.real(E_Madelung), time_scf, timesub
 
 
 
