@@ -904,6 +904,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         return sum_term - sub_term
 
 
+
     if version == "One_shot":
         nk = get_monkhorst_pack_size(icell, ikpts)
         shift = icell.get_abs_kpts([0.5 / n for n in nk])
@@ -914,6 +915,9 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print(combined)
 
         mf2 = scf.KHF(icell, combined)
+        if icell.dimension < 3:
+            aftdf = df.AFTDF(icell, ikpts).build()
+            mf2.with_df = aftdf
         print(mf2.kernel())
         d_m = mf2.make_rdm1()
         #Get dm at kpoints in unshifted mesh
@@ -961,6 +965,9 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         shifted_mesh = mfs.kpts + shift
         #Calculation on shifted mesh
         mf2 = scf.KHF(icell, shifted_mesh)
+        if icell.dimension < 3:
+            aftdf = df.AFTDF(icell, ikpts).build()
+            mf2.with_df = aftdf
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
         #Get K matrix on shifted kpts, dm from unshifted mesh
@@ -997,6 +1004,9 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         return np.real(E_stagger_M), np.real(E_stagger)
     else:
         mf2 = scf.KHF(icell,ikpts)
+        if icell.dimension < 3:
+            aftdf = df.AFTDF(icell, ikpts).build()
+            mf2.with_df = aftdf
         print(mf2.kernel())
         #Defining size and making shifted mesh
         nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
