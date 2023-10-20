@@ -880,6 +880,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
     def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None):
         #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
+        nk = get_monkhorst_pack_size(icell, ikpts)
         if ew_eta is None or ew_cut is None:
             ew_eta, ew_cut = cell_input.get_ewald_params(cell_input.precision, cell_input.mesh)
         chargs = cell_input.atom_charges()
@@ -887,27 +888,82 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ke_cutoff = -2 * ew_eta ** 2 * log_precision
         #Get FFT mesh from cutoff value
         mesh = cell_input.cutoff_to_mesh(ke_cutoff)
+        # if cell_input.dimension <= 2:
+        #     mesh[2] = 1
+        # if cell_input.dimension == 1:
+        #     mesh[1] = 1
         #Get grid
         Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh = mesh)
         #Get q+G points
         G_combined = Gv + shifted
-        #Calculate |q+G|^2 values of the shifted points
-        qG2 = np.einsum('gi,gi->g',G_combined,G_combined)
-        #Note: Stephen - remove those points where q+G = 0
-        qG2[qG2==0] = 1e200
-        #Now putting the ingredients together
-        component = 4*np.pi/qG2*np.exp(-qG2/(4*ew_eta**2))
-        #First term
-        sum_term = weights*np.einsum('i->',component).real
-        #Second Term
-        sub_term = 2*ew_eta/np.sqrt(np.pi)
-        return sum_term - sub_term
+        absG2 = np.einsum('gi,gi->g', G_combined, G_combined)
 
+
+        if cell_input.dimension ==3:
+            # Calculate |q+G|^2 values of the shifted points
+            qG2 = np.einsum('gi,gi->g', G_combined, G_combined)
+            # Note: Stephen - remove those points where q+G = 0
+            qG2[qG2 == 0] = 1e200
+            # Now putting the ingredients together
+            component = 4 * np.pi / qG2 * np.exp(-qG2 / (4 * ew_eta ** 2))
+            #First term
+            sum_term = weights*np.einsum('i->',component).real
+            #Second Term
+            sub_term = 2*ew_eta/np.sqrt(np.pi)
+            return sum_term - sub_term
+
+        elif cell_input.dimension == 2:  # Truncated Coulomb
+            from scipy.special import erfc, erf
+            # The following 2D ewald summation is taken from:
+            # R. Sundararaman and T. Arias PRB 87, 2013
+            def fn(eta, Gnorm, z):
+                Gnorm_z = Gnorm * z
+                large_idx = Gnorm_z > 20.0
+                ret = np.zeros_like(Gnorm_z)
+                x = Gnorm / 2. / eta + eta * z
+                with np.errstate(over='ignore'):
+                    erfcx = erfc(x)
+                    ret[~large_idx] = np.exp(Gnorm_z[~large_idx]) * erfcx[~large_idx]
+                    ret[large_idx] = np.exp((Gnorm * z - x ** 2)[large_idx]) * erfcx[large_idx]
+                return ret
+
+            def gn(eta, Gnorm, z):
+                return np.pi / Gnorm * (fn(eta, Gnorm, z) + fn(eta, Gnorm, -z))
+
+            def gn0(eta, z):
+                return -2 * np.pi * (z * erf(eta * z) + np.exp(-(eta * z) ** 2) / eta / np.sqrt(np.pi))
+
+            b = cell_input.reciprocal_vectors()
+            inv_area = np.linalg.norm(np.cross(b[0], b[1])) / (2 * np.pi) ** 2
+            # Perform the reciprocal space summation over  all reciprocal vectors
+            # within the x,y plane.
+            planarG2_idx = np.logical_and(Gv[:, 2] == 0, absG2 > 0.0)
+
+            G_combined = G_combined[planarG2_idx]
+            absG2 = absG2[planarG2_idx]
+            absG = absG2 ** (0.5)
+            # Performing the G != 0 summation.
+            coords = np.array([[0,0,0]])
+            rij = coords[:, None, :] - coords[None, :, :] # should be just the zero vector for correction.
+            Gdotr = np.einsum('ijx,gx->ijg', rij, G_combined)
+            ewg = np.einsum('i,j,ijg,ijg->', chargs, chargs, np.cos(Gdotr),
+                            gn(ew_eta, absG, rij[:, :, 2:3]))
+            # Performing the G == 0 summation.
+            # ewg += np.einsum('i,j,ij->', chargs, chargs, gn0(ew_eta, rij[:, :, 2]))
+
+            ewg *= inv_area # * 0.5
+
+            ewg_analytical = 2 * ew_eta / np.sqrt(np.pi)
+            return ewg - ewg_analytical
 
 
     if version == "One_shot":
         nk = get_monkhorst_pack_size(icell, ikpts)
         shift = icell.get_abs_kpts([0.5 / n for n in nk])
+        if icell.dimension <=2:
+            shift[2] =  0
+        elif icell.dimension == 1:
+            shift[1] = 0
         Nk = np.prod(nk) * 2
         print("Shift is: " + str(shift))
         shifted_mesh = ikpts + shift
@@ -916,8 +972,10 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
 
         mf2 = scf.KHF(icell, combined)
         if icell.dimension < 3:
-            aftdf = df.AFTDF(icell, ikpts).build()
+            aftdf = df.GDF(icell, combined).build()
             mf2.with_df = aftdf
+            # mf2.with_df.eta = 0.2
+            # mf2.with_df.mesh = icell.mesh
         print(mf2.kernel())
         d_m = mf2.make_rdm1()
         #Get dm at kpoints in unshifted mesh
@@ -936,7 +994,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
-        while True:
+        while True and icell.dimension !=1:
             Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
@@ -966,8 +1024,10 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         #Calculation on shifted mesh
         mf2 = scf.KHF(icell, shifted_mesh)
         if icell.dimension < 3:
-            aftdf = df.AFTDF(icell, ikpts).build()
+            aftdf = df.GDF(icell, ikpts).build()
             mf2.with_df = aftdf
+            # mf2.with_df.eta = 0.2
+            # mf2.with_df.mesh = icell.mesh
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
         #Get K matrix on shifted kpts, dm from unshifted mesh
@@ -982,7 +1042,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
-        while True:
+        while True and icell.dimension !=1 :
             Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
@@ -1003,14 +1063,20 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print("Two Shot")
         return np.real(E_stagger_M), np.real(E_stagger)
     else:
-        mf2 = scf.KHF(icell,ikpts)
+        mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
         if icell.dimension < 3:
-            aftdf = df.AFTDF(icell, ikpts).build()
+            aftdf = df.GDF(icell, ikpts).build()
             mf2.with_df = aftdf
+            # mf2.with_df.eta = 0.2
+            # mf2.with_df.mesh = icell.mesh
         print(mf2.kernel())
         #Defining size and making shifted mesh
         nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
         shift = mf2.cell.get_abs_kpts([0.5/n for n in nk])
+        if icell.dimension <=2:
+            shift[2] =  0
+        elif icell.dimension == 1:
+            shift[1] = 0
         shifted_mesh = mf2.kpts + shift
         print(mf2.kpts)
         print(shifted_mesh)
@@ -1026,7 +1092,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
 
         #Construct the Fock Matrix
         h1e = get_hcore(mf2, cell = mf2.cell, kpts = shifted_mesh)
-        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
+        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh,exxdiv='ewald')
         #Veff = Jmat - Kmat/2
         Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
         F_shift = h1e + Veff
@@ -1037,17 +1103,13 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         Nk = np.prod(nk)
         E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
         E_stagger/=2
-        #Standard Exchange energy
-        #Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
-        #E_standard = -1./Nk * np.einsum('kij,kji', dm_un,Ko ) * 0.5
-        #E_standard /=2
 
         count_iter = 1
         ecell = set_cell(mf2)
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
-        while True:
+        while True and icell.dimension !=1:
             Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
@@ -1065,6 +1127,11 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         nocc = mf2.cell.tot_electrons()//2
         E_stagger_M = E_stagger + nocc*conv_Madelung
         print("Non SCF")
+    # Standard Exchange energy
+    # Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
+    # E_standard = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+    # E_standard /= 2
+
     return np.real(E_stagger_M), np.real(E_stagger)
 
 def khf_ss(icell, ikpts):

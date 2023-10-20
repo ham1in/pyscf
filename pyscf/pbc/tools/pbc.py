@@ -327,7 +327,7 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
             with np.errstate(divide='ignore', invalid='ignore'):
                 coulG = weights*4*np.pi/absG2
             if len(G0_idx) > 0:
-                coulG[G0_idx] = -2*np.pi*Ld2**2 #-pi*L_z^2/2
+                coulG[G0_idx] = -2*np.pi*Ld2**2 #-pi*L_z^2/2]
 
         elif cell.dimension == 1:
             logger.warn(cell, 'No method for PBC dimension 1, dim-type %s.'
