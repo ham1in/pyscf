@@ -1057,7 +1057,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print("Non SCF")
     return np.real(E_stagger_M), np.real(E_stagger)
 
-def khf_ss(icell, ikpts):
+def khf_ss(icell, ikpts, local = 5):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     from pyscf.pbc.tools import madelung
@@ -1145,33 +1145,60 @@ def khf_ss(icell, ikpts):
         kGrid = kptGrid3D
         nkpt = kGrid.shape[0]
         LsCell_bz = cell.reciprocal_vectors()
-
-        #NEEDS DEBUGGING. All are becoming negative - what is going on? A: Mesh might not be big enough, but I think this is doing what it should.. (almost)
+        print("RECIPROCAL LATTICE VECTORS")
+        print(LsCell_bz)
+        print("QGRID")
+        #Subtract out copies of reciprocal lattice vectors? Construct grid in First Brillouin zone.
         for q in range(nkpt):
-            qpt = qGrid[q,:]
-            #print(qpt)
-            #Get rid of multiples of recip vectors
-            for i in range(len(LsCell_bz)):
-                qpt = qpt - np.floor((np.dot(qpt + 1e-12,LsCell_bz[i]))/np.dot(LsCell_bz[i],LsCell_bz[i])) * LsCell_bz[i]
-            #Bring into first Brillouin zone
-            qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T)/(np.linalg.norm(LsCell_bz,axis=1)**2) >= 0.5, 1, 0) @ LsCell_bz
-            #Update qGrid
-            qGrid[q,:] = qpt
-
+            qpt = qGrid[q, :]
+            #Define qpt in the basis of the reciprocal lattice vectors
+            qpt_trans = np.linalg.inv(LsCell_bz).dot(qpt)
+            # Get rid of multiples of recip vectors
+            #for i in range(len(LsCell_bz)):
+                #qpt = qpt - np.floor((np.dot(qpt + 1e-12, LsCell_bz[i])) / np.dot(LsCell_bz[i], LsCell_bz[i])) * LsCell_bz[i]
+            for i in range(3):
+                qpt_trans[i] = qpt_trans[i]%1
+            # Bring into first Brillouin zone
+            #qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T) / (np.linalg.norm(LsCell_bz, axis=1) ** 2) >= 0.5, 1,
+                                 #0) @ LsCell_bz
+            for i in range(3):
+                if qpt_trans[i]>=0.5:
+                    qpt_trans[i] -=1
+            #Transform back into cartesian coordinates
+            qpt = np.dot(LsCell_bz, qpt_trans)
+            # Update qGrid
+            qGrid[q, :] = qpt
 
         #print(qGrid)
         nG = uKpts.shape[0]
         rhokqmnG = np.zeros((nkpt,nkpt,nbands,nbands, nG),dtype = complex)
 
+        print("KGRID IS")
+        print(kGrid)
+
+        print("QGRID IS")
+        print(qGrid)
         for k in range(nkpt):
             for q in range(nkpt):
                 kpt1 = kGrid[k,:]
                 qpt = qGrid[q,:]
                 kpt2 = kpt1 + qpt
-                for i in range(len(LsCell_bz)):
-                    kpt2 = kpt2 - np.floor((np.dot(kpt2+1e-12,LsCell_bz[i]))/(np.dot(LsCell_bz[i],LsCell_bz[i].T))) * LsCell_bz[i]
+                #Bring back into the cell
+                trans_point = np.linalg.inv(LsCell_bz).dot(kpt2)
+                for i in range(3):
+                    print(trans_point[i])
+                    if abs(trans_point[i])>1e-8:
+                        trans_point[i] = trans_point[i]%1
+
+                kpt2 = np.dot(LsCell_bz,trans_point)
+
+                #for i in range(len(LsCell_bz)):
+                    #kpt2 = kpt2 - np.floor(
+                        #(np.dot(kpt2 + 1e-12, LsCell_bz[i])) / (np.dot(LsCell_bz[i], LsCell_bz[i].T))) * LsCell_bz[i]
 
                 d2 = np.sum((kGrid - kpt2) ** 2, axis=1)
+
+                print(d2)
                 idx_kpt2 = np.where(d2 < 1e-12)[0]
                 if len(idx_kpt2) != 1:
                     raise TypeError("Cannot locate (k+q) in the kmesh.")
@@ -1227,7 +1254,7 @@ def khf_ss(icell, ikpts):
     print("Recip lattice unit cell")
     print(cell_grid_bz)
     #Localizer support setting
-    N_local = 5
+    N_local = local
     #Establish Localizer grid
     LsCell_bz_local = N_local * LsCell_bz
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local + 1) // 2 + 1, 0)))
