@@ -10,7 +10,7 @@
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
+# See the License for the specific language gomverning permissions and
 # limitations under the License.
 #
 # Author: Qiming Sun <osirpt.sun@gmail.com>
@@ -952,11 +952,13 @@ def _ewald_exxdiv_for_G0(cell, kpts, dms, vk, kpts_band=None):
     elif kpts_band is None or numpy.array_equal(kpts, kpts_band):
         for k in range(len(kpts)):
             for i,dm in enumerate(dms):
+                operand = reduce(numpy.dot, (s[k], dm[k], s[k]))
                 vk[i,k] += madelung * reduce(numpy.dot, (s[k], dm[k], s[k]))
     else:
         for k, kpt in enumerate(kpts):
             for kp in member(kpt, kpts_band.reshape(-1,3)):
                 for i,dm in enumerate(dms):
+
                     vk[i,kp] += madelung * reduce(numpy.dot, (s[k], dm[k], s[k]))
 
 
