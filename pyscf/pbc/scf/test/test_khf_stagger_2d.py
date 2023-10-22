@@ -37,10 +37,10 @@ cell.build(unit='B',
            )
 kpts = cell.make_kpts(kmesh)
 # Compute Staggered Mesh Exact Exchange for 2D System
-E_stagger_M, E_stagger = khf.khf_stagger(icell=cell,ikpts=kpts,version = "Non_SCF")
+Ek_stagger_M, Ek_stagger, Ek_standard = khf.khf_stagger(icell=cell,ikpts=kpts,version = "Non_SCF")
 print('Ek_stagger_M, Ek_stagger (a.u.) is')
-print(E_stagger_M,E_stagger)
-np.testing.assert_almost_equal(E_stagger_M, -2.24607552975387, 4)
+print(Ek_stagger_M,Ek_stagger)
+np.testing.assert_almost_equal(Ek_stagger_M, -2.24607552975387, 4)
 
 # f = open(cell.output, "a")
 # f.write("E_stagger_M: %.10E\n" % (E_stagger_M))
@@ -62,6 +62,7 @@ print('Ek_regular (a.u.) is ')
 
 print(Ek)
 np.testing.assert_almost_equal(Ek, -2.2510515644, 4)
+np.testing.assert_almost_equal(Ek, Ek_standard, 4)
 # f.write("Computed Ek: %.10E\n" % (ek.real))
 
 

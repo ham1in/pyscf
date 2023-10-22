@@ -1012,7 +1012,6 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         nocc = mf2.cell.tot_electrons() // 2
         E_stagger_M = E_stagger + nocc * conv_Madelung
         print("One Shot")
-        return np.real(E_stagger_M), np.real(E_stagger)
 
     elif version == "Two_shot":
         #Regular scf calculation
@@ -1061,7 +1060,6 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         E_stagger_M = E_stagger + nocc * conv_Madelung
 
         print("Two Shot")
-        return np.real(E_stagger_M), np.real(E_stagger)
     else:
         mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
         if icell.dimension < 3:
@@ -1128,11 +1126,11 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         E_stagger_M = E_stagger + nocc*conv_Madelung
         print("Non SCF")
     # Standard Exchange energy
-    # Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
-    # E_standard = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
-    # E_standard /= 2
+    Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
+    E_standard = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+    E_standard /= 2
 
-    return np.real(E_stagger_M), np.real(E_stagger)
+    return np.real(E_stagger_M), np.real(E_stagger), np.real(E_standard)
 
 def khf_ss(icell, ikpts):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
