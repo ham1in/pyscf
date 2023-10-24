@@ -1152,7 +1152,7 @@ def khf_ss(icell, ikpts, local = 5):
         for q in range(nkpt):
             qpt = qGrid[q, :]
             #Define qpt in the basis of the reciprocal lattice vectors
-            qpt_trans = np.linalg.inv(LsCell_bz).dot(qpt)
+            qpt_trans = np.linalg.inv(LsCell_bz.T).dot(qpt)
             # Get rid of multiples of recip vectors
             #for i in range(len(LsCell_bz)):
                 #qpt = qpt - np.floor((np.dot(qpt + 1e-12, LsCell_bz[i])) / np.dot(LsCell_bz[i], LsCell_bz[i])) * LsCell_bz[i]
@@ -1167,7 +1167,7 @@ def khf_ss(icell, ikpts, local = 5):
                 if qpt_trans[i]>=0.5:
                     qpt_trans[i] -=1
             #Transform back into cartesian coordinates
-            qpt = np.dot(LsCell_bz, qpt_trans)
+            qpt = np.dot(LsCell_bz.T, qpt_trans)
             # Update qGrid
             qGrid[q, :] = qpt
 
@@ -1186,13 +1186,14 @@ def khf_ss(icell, ikpts, local = 5):
                 qpt = qGrid[q,:]
                 kpt2 = kpt1 + qpt
                 #Bring back into the cell
-                trans_point = np.linalg.inv(LsCell_bz).dot(kpt2)
+                trans_point = np.linalg.inv(LsCell_bz.T).dot(kpt2)
                 for i in range(3):
                     print(trans_point[i])
                     if abs(trans_point[i])>1e-6:
                         trans_point[i] = round(trans_point[i],6)%1
+                    print(trans_point[i])
 
-                kpt2 = np.dot(LsCell_bz,trans_point)
+                kpt2 = np.dot(LsCell_bz.T,trans_point)
 
                 #for i in range(len(LsCell_bz)):
                     #kpt2 = kpt2 - np.floor(
