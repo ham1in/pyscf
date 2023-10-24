@@ -1202,7 +1202,7 @@ def khf_ss(icell, ikpts, local = 5):
                 d2 = np.sum((kGrid - kpt2) ** 2, axis=1)
 
                 print(d2)
-                idx_kpt2 = np.where(d2 < 1e-12)[0]
+                idx_kpt2 = np.where(d2 < 1e-8)[0]
                 if len(idx_kpt2) != 1:
                     raise TypeError("Cannot locate (k+q) in the kmesh.")
                 else:
@@ -1309,7 +1309,7 @@ def khf_ss(icell, ikpts, local = 5):
 
     #Implementing the correction
     correction = 0
-    #integral part
+    #quadrature
     for iq in range(np.shape(qGrid)[0]):
         qG = qGrid[iq,:] + loc_grid
         tmp = SqG[iq,:] * H(qG)/ np.sum(qG**2, axis=1)
