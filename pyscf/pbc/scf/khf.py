@@ -1188,7 +1188,7 @@ def khf_ss(icell, ikpts, local = 5):
                 for i in range(3):
                     print(trans_point[i])
                     if abs(trans_point[i])>1e-8:
-                        trans_point[i] = trans_point[i]%1
+                        trans_point[i] = round(trans_point[i],8)%1
 
                 kpt2 = np.dot(LsCell_bz,trans_point)
 
