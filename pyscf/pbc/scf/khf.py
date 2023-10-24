@@ -1157,6 +1157,8 @@ def khf_ss(icell, ikpts, local = 5):
             #for i in range(len(LsCell_bz)):
                 #qpt = qpt - np.floor((np.dot(qpt + 1e-12, LsCell_bz[i])) / np.dot(LsCell_bz[i], LsCell_bz[i])) * LsCell_bz[i]
             for i in range(3):
+                if abs(qpt_trans[i])>1e-8:
+                    qpt_trans[i] = round(qpt_trans[i],6)%1
                 qpt_trans[i] = qpt_trans[i]%1
             # Bring into first Brillouin zone
             #qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T) / (np.linalg.norm(LsCell_bz, axis=1) ** 2) >= 0.5, 1,
@@ -1187,8 +1189,8 @@ def khf_ss(icell, ikpts, local = 5):
                 trans_point = np.linalg.inv(LsCell_bz).dot(kpt2)
                 for i in range(3):
                     print(trans_point[i])
-                    if abs(trans_point[i])>1e-8:
-                        trans_point[i] = round(trans_point[i],8)%1
+                    if abs(trans_point[i])>1e-6:
+                        trans_point[i] = round(trans_point[i],6)%1
 
                 kpt2 = np.dot(LsCell_bz,trans_point)
 
