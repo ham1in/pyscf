@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF"):
+def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -957,6 +957,12 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
             return ewg - ewg_analytical
 
 
+    if df_type == None:
+        if icell.dimension <=2:
+            df_type = df.GDF
+        else:
+            df_type = df.FFTDF
+
     if version == "One_shot":
         nk = get_monkhorst_pack_size(icell, ikpts)
         shift = icell.get_abs_kpts([0.5 / n for n in nk])
@@ -971,11 +977,8 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print(combined)
 
         mf2 = scf.KHF(icell, combined)
-        if icell.dimension < 3:
-            aftdf = df.GDF(icell, combined).build()
-            mf2.with_df = aftdf
-            # mf2.with_df.eta = 0.2
-            # mf2.with_df.mesh = icell.mesh
+        mf2.with_df = df_type(icell, combined).build() #For 2d,1d, df_type cannot be FFTDF
+
         print(mf2.kernel())
         d_m = mf2.make_rdm1()
         #Get dm at kpoints in unshifted mesh
@@ -1022,11 +1025,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         shifted_mesh = mfs.kpts + shift
         #Calculation on shifted mesh
         mf2 = scf.KHF(icell, shifted_mesh)
-        if icell.dimension < 3:
-            aftdf = df.GDF(icell, ikpts).build()
-            mf2.with_df = aftdf
-            # mf2.with_df.eta = 0.2
-            # mf2.with_df.mesh = icell.mesh
+        mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
         #Get K matrix on shifted kpts, dm from unshifted mesh
@@ -1062,11 +1061,8 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print("Two Shot")
     else:
         mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
-        if icell.dimension < 3:
-            aftdf = df.GDF(icell, ikpts).build()
-            mf2.with_df = aftdf
-            # mf2.with_df.eta = 0.2
-            # mf2.with_df.mesh = icell.mesh
+        mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
+
         print(mf2.kernel())
         #Defining size and making shifted mesh
         nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
