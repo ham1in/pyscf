@@ -1209,6 +1209,8 @@ def khf_ss(icell, ikpts, local = 5):
                     idx_kpt2 = idx_kpt2[0]
                 kGdiff = (kpt1 + qpt) - kpt2
 
+
+                # FFT DF of rho_ij
                 for n in range(nbands):
                     for m in range(nbands):
                         u1 = uKpt[:,n,k]
@@ -1256,6 +1258,9 @@ def khf_ss(icell, ikpts, local = 5):
 
     print("Recip lattice unit cell")
     print(cell_grid_bz)
+
+
+
     #Localizer support setting
     N_local = local
     #Establish Localizer grid
