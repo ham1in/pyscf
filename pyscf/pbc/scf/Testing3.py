@@ -1,7 +1,7 @@
 import scipy.io
 import numpy as np
 
-u_data = scipy.io.loadmat('ukpt.mat')
+u_data = scipy.io.loadmat('ukpt3.mat')
 uKpts = u_data['uKpt']
 print(np.shape(uKpts))
 LsCell = np.array([[1,0,0],[0,1,0],[0,0,1]])
@@ -9,7 +9,73 @@ NsCell = np.array([12,12,12])
 nocc = 1
 
 
-kpts = np.array([[0,0,0], [np.pi,0,0],[0,np.pi,0],[np.pi,np.pi,0],[0,0,np.pi], [np.pi,0,np.pi],[0,np.pi,np.pi],[np.pi,np.pi,np.pi]])
+#kpts = np.array([[0,0,0], [np.pi,0,0],[0,np.pi,0],[np.pi,np.pi,0],[0,0,np.pi], [np.pi,0,np.pi],[0,np.pi,np.pi],[np.pi,np.pi,np.pi]])
+kpts = np.array([
+    [0, 0, 0],
+    [1.5708, 0, 0],
+    [3.1416, 0, 0],
+    [4.7124, 0, 0],
+    [0, 1.5708, 0],
+    [1.5708, 1.5708, 0],
+    [3.1416, 1.5708, 0],
+    [4.7124, 1.5708, 0],
+    [0, 3.1416, 0],
+    [1.5708, 3.1416, 0],
+    [3.1416, 3.1416, 0],
+    [4.7124, 3.1416, 0],
+    [0, 4.7124, 0],
+    [1.5708, 4.7124, 0],
+    [3.1416, 4.7124, 0],
+    [4.7124, 4.7124, 0],
+    [0, 0, 1.5708],
+    [1.5708, 0, 1.5708],
+    [3.1416, 0, 1.5708],
+    [4.7124, 0, 1.5708],
+    [0, 1.5708, 1.5708],
+    [1.5708, 1.5708, 1.5708],
+    [3.1416, 1.5708, 1.5708],
+    [4.7124, 1.5708, 1.5708],
+    [0, 3.1416, 1.5708],
+    [1.5708, 3.1416, 1.5708],
+    [3.1416, 3.1416, 1.5708],
+    [4.7124, 3.1416, 1.5708],
+    [0, 4.7124, 1.5708],
+    [1.5708, 4.7124, 1.5708],
+    [3.1416, 4.7124, 1.5708],
+    [4.7124, 4.7124, 1.5708],
+    [0, 0, 3.1416],
+    [1.5708, 0, 3.1416],
+    [3.1416, 0, 3.1416],
+    [4.7124, 0, 3.1416],
+    [0, 1.5708, 3.1416],
+    [1.5708, 1.5708, 3.1416],
+    [3.1416, 1.5708, 3.1416],
+    [4.7124, 1.5708, 3.1416],
+    [0, 3.1416, 3.1416],
+    [1.5708, 3.1416, 3.1416],
+    [3.1416, 3.1416, 3.1416],
+    [4.7124, 3.1416, 3.1416],
+    [0, 4.7124, 3.1416],
+    [1.5708, 4.7124, 3.1416],
+    [3.1416, 4.7124, 3.1416],
+    [4.7124, 4.7124, 3.1416],
+    [0, 0, 4.7124],
+    [1.5708, 0, 4.7124],
+    [3.1416, 0, 4.7124],
+    [4.7124, 0, 4.7124],
+    [0, 1.5708, 4.7124],
+    [1.5708, 1.5708, 4.7124],
+    [3.1416, 1.5708, 4.7124],
+    [4.7124, 1.5708, 4.7124],
+    [0, 3.1416, 4.7124],
+    [1.5708, 3.1416, 4.7124],
+    [3.1416, 3.1416, 4.7124],
+    [4.7124, 3.1416, 4.7124],
+    [0, 4.7124, 4.7124],
+    [1.5708, 4.7124, 4.7124],
+    [3.1416, 4.7124, 4.7124],
+    [4.7124, 4.7124, 4.7124]
+])
 recip_vec = np.linalg.inv(LsCell.T)*2*np.pi
 L_incre = LsCell/NsCell[:,np.newaxis]
 dvol = np.linalg.det(L_incre)
@@ -53,21 +119,27 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
     kGrid = kptGrid3D
     nkpt = kGrid.shape[0]
     LsCell_bz = np.linalg.inv(LsCell.T)*2*np.pi
-    # NEEDS DEBUGGING. All are becoming negative - what is going on? A: Mesh might not be big enough, but I think this is doing what it should.. (almost)
     for q in range(nkpt):
         qpt = qGrid[q, :]
-        # print(qpt)
+        # Define qpt in the basis of the reciprocal lattice vectors
+        qpt_trans = np.linalg.inv(LsCell_bz.T).dot(qpt)
         # Get rid of multiples of recip vectors
-        for i in range(len(LsCell_bz)):
-            qpt = qpt - np.floor((np.dot(qpt + 1e-12, LsCell_bz[i])) / np.dot(LsCell_bz[i], LsCell_bz[i])) * LsCell_bz[i]
+        # for i in range(len(LsCell_bz)):
+        # qpt = qpt - np.floor((np.dot(qpt + 1e-12, LsCell_bz[i])) / np.dot(LsCell_bz[i], LsCell_bz[i])) * LsCell_bz[i]
+        for i in range(3):
+            if abs(qpt_trans[i]) > 1e-8:
+                qpt_trans[i] = round(qpt_trans[i], 6) % 1
+            qpt_trans[i] = qpt_trans[i] % 1
         # Bring into first Brillouin zone
-        qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T) / (np.linalg.norm(LsCell_bz, axis=1) ** 2) >= 0.5, 1,0) @ LsCell_bz
+        # qpt = qpt - np.where(np.dot(qpt, LsCell_bz.T) / (np.linalg.norm(LsCell_bz, axis=1) ** 2) >= 0.5, 1,
+        # 0) @ LsCell_bz
+        for i in range(3):
+            if qpt_trans[i] >= 0.5:
+                qpt_trans[i] -= 1
+        # Transform back into cartesian coordinates
+        qpt = np.dot(LsCell_bz.T, qpt_trans)
         # Update qGrid
         qGrid[q, :] = qpt
-
-    print("qGrid")
-    print(qGrid)
-    ######### UP TO HERE IS GOOD #########
 
     # print(qGrid)
     nG = uKpts.shape[0]
@@ -78,11 +150,17 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
             kpt1 = kGrid[k, :]
             qpt = qGrid[q, :]
             kpt2 = kpt1 + qpt
-            for i in range(len(LsCell_bz)):
-                kpt2 = kpt2 - np.floor((np.dot(kpt2 + 1e-12, LsCell_bz[i])) / (np.dot(LsCell_bz[i], LsCell_bz[i].T))) * LsCell_bz[i]
-            #Correct till here
+            trans_point = np.linalg.inv(LsCell_bz.T).dot(kpt2)
+            for i in range(3):
+                if abs(trans_point[i]) > 1e-6:
+                    trans_point[i] = round(trans_point[i], 6) % 1
+
+            kpt2 = np.dot(LsCell_bz.T, trans_point)
+
             d2 = np.sum((kGrid - kpt2) ** 2, axis=1)
-            idx_kpt2 = np.where(d2 < 1e-12)[0]
+            print("DISTANCES")
+            print(d2)
+            idx_kpt2 = np.where(d2 < 1e-8)[0]
             if len(idx_kpt2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
             else:
@@ -92,6 +170,7 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
             for n in range(nbands):
                 for m in range(nbands):
                     u1 = uKpt[:,n, k]
+                    #Good till here
                     u2 = np.exp(-1j * (np.dot(rptGrid3D, kGdiff.T))) * uKpt[:,m, idx_kpt2]
                     rho12 = np.conj(u1) * u2
                     rho12 = np.reshape(rho12, (NsCell[0], NsCell[1], NsCell[2]), order='F')
@@ -101,16 +180,14 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
 
     return rhokqmnG, kGrid, qGrid
 
-Nk = 8
+#RHO IS CHECKED - FINE
+Nk = 64
 rho_kqijG, kGrid, qGrid = pair_product_recip_exchange(uKpt = uKpts, kptGrid3D= kpts, rptGrid3D = rptGrid3D, NsCell = NsCell, dvol = dvol , cell = None, nbands= nocc)
 sum_res = np.sum(np.abs(rho_kqijG)**2 , axis = (0,2,3),keepdims=True)
 sum_res = np.reshape(sum_res, (rho_kqijG.shape[1], rho_kqijG.shape[4]), order='F')
 SqG = 1 / Nk * sum_res
 SqG-=nocc
-#SqG now fixed up till this point
-
-
-#Ordering of G vectors is different here. However, proceed for now and see if there are any other differences. If there are, it can be here
+#SQG CHECKED TILL HERE
 
 #Get reciprocal lattice grid for unit cell
 #LsCell_bz_incre = LsCell_bz/NsCell[:,np.newaxis]
@@ -144,14 +221,11 @@ for i in range(np.shape(loc_grid)[0]):
 
 idxG_localizer = idxG_localizer.flatten()
 SqG = SqG[:, idxG_localizer]
-print(np.shape(SqG))
-# ATTENTION NEEDED: What to do in the generalized case where the reciprocal cell vectors aren't along the axes?
-# MISTAKE: Use LsCellBZ, not the local extended version. This may be leading to the blow up behavior...
+
 LsCell_bz_local_norm2 = [sum(c ** 2 for c in v) for v in LsCell_bz_local]
 inv_LsCell_bz_local = np.array(LsCell_bz_local) / LsCell_bz_local_norm2
-nk = np.array([2,2,2])
+nk = np.array([4,4,4])
 N = N_local * nk
-N = 9*nk
 if N[0] % 2 == 0:
     G_1 = 2 * np.pi * np.concatenate((np.arange(0, N[0] // 2 + 1), np.arange(-N[0] // 2 + 1, 0)))
 else:
@@ -171,15 +245,9 @@ normG = np.sqrt(np.sum(gptGrid_fourier ** 2, axis=1))
 from scipy.special import sici
 coulG = 4 * np.pi / normG * sici(normG * r1)[0]
 coulG[normG < 1e-12] = 4 * np.pi * r1
-#THE ABOVE IS NUMERICALLY EQUIVALENT
-
-
-#Up to here, everything looks good. The numbers come out to be the same albeit in different order sometimes.
-# Implementing the correction
+#COUL G CHECKED
 correction = 0
-# integral part
-####### ERROR IS HERE
-###SQG is checked to be the same.
+
 for iq in range(np.shape(qGrid)[0]):
     qG = qGrid[iq, :] + loc_grid
     #Checked up to here
@@ -188,10 +256,7 @@ for iq in range(np.shape(qGrid)[0]):
     tmp[np.isinf(tmp)] = 0
     tmp[np.isnan(tmp)] = 0
     correction += np.sum(tmp) / Nk
-
-#CHANGE LOG:
-#MOSTLY GRIDS, RESHAPE, SOME MULTIPLCIATION ISSUES, FFT ALREADY THE SAME ETC
-#FIXED TO HERE!!!!!!!!!!!
+# CORRECT UP TILL HERE
 
 for iq in range(np.shape(qGrid)[0]):
     qG = qGrid[iq, :] + loc_grid
@@ -201,40 +266,3 @@ for iq in range(np.shape(qGrid)[0]):
     correction -= 1 / Nk * np.real(np.sum(tmp))
 
 print(correction)
-
-###TESTING FOURIER INTERPOLATION
-def SqH(q, gMesh, qMesh, Sq, H, Nk):
-    interpolation = []
-    for i in range(len(qMesh)):
-        tmp = 0
-        for j in range(len(gMesh)):
-            qDiff = q - qMesh[i]
-            exp_part = np.exp(1j * np.dot(gMesh[j].T, qDiff))
-            sample_part = Sq[i, 0] * H(qMesh[i])
-            tmp += exp_part * sample_part
-        interpolation.append(tmp)
-    interpolation = np.sum(interpolation) / Nk
-    return interpolation
-
-
-x = np.linspace(-5, 5, 10)
-y = np.linspace(-5, 5, 10)
-x_grid, y_grid = np.meshgrid(x, y)
-z_grid = np.zeros_like(x_grid)
-q_grid = np.column_stack((x_grid.ravel(), y_grid.ravel(), z_grid.ravel()))
-vals = []
-for i in q_grid:
-    tmp = SqH(i, gptGrid_fourier, qGrid, SqG, H, Nk)
-    vals.append(tmp)
-
-vals = np.array(vals)
-vals = vals.reshape(x_grid.shape)
-import matplotlib.pyplot as plt
-
-fig = plt.figure(figsize=(12, 10))
-ax = plt.axes(projection='3d')
-ax.plot_surface(x_grid, y_grid, vals)
-ax.set_xlabel("q$_x$")
-ax.set_ylabel("q$_y$")
-ax.set_zlabel("Interpolation")
-plt.show()
