@@ -1,7 +1,7 @@
 import scipy.io
 import numpy as np
 
-u_data = scipy.io.loadmat('ukpt.mat')
+u_data = scipy.io.loadmat('ukpt333.mat')
 uKpts = u_data['uKpt']
 print(np.shape(uKpts))
 LsCell = np.array([[1,0,0],[0,1,0],[0,0,1]])
@@ -9,7 +9,9 @@ NsCell = np.array([12,12,12])
 nocc = 1
 
 
-kpts = np.array([[0,0,0], [np.pi,0,0],[0,np.pi,0],[np.pi,np.pi,0],[0,0,np.pi], [np.pi,0,np.pi],[0,np.pi,np.pi],[np.pi,np.pi,np.pi]])
+#kpts = np.array([[0,0,0], [np.pi,0,0],[0,np.pi,0],[np.pi,np.pi,0],[0,0,np.pi], [np.pi,0,np.pi],[0,np.pi,np.pi],[np.pi,np.pi,np.pi]])
+k_data = scipy.io.loadmat('kpt333.mat')
+kpts = k_data['kptGrid3D']
 recip_vec = np.linalg.inv(LsCell.T)*2*np.pi
 L_incre = LsCell/NsCell[:,np.newaxis]
 dvol = np.linalg.det(L_incre)
@@ -101,7 +103,7 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
 
     return rhokqmnG, kGrid, qGrid
 
-Nk = 8
+Nk = 27
 rho_kqijG, kGrid, qGrid = pair_product_recip_exchange(uKpt = uKpts, kptGrid3D= kpts, rptGrid3D = rptGrid3D, NsCell = NsCell, dvol = dvol , cell = None, nbands= nocc)
 sum_res = np.sum(np.abs(rho_kqijG)**2 , axis = (0,2,3),keepdims=True)
 sum_res = np.reshape(sum_res, (rho_kqijG.shape[1], rho_kqijG.shape[4]), order='F')
@@ -184,7 +186,6 @@ for iq in range(np.shape(qGrid)[0]):
     tmp[np.isnan(tmp)] = 0
     correction += np.sum(tmp) / Nk
 
-print(correction)
 #CHANGE LOG:
 #MOSTLY GRIDS, RESHAPE, SOME MULTIPLCIATION ISSUES, FFT ALREADY THE SAME ETC
 #FIXED TO HERE!!!!!!!!!!!

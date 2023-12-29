@@ -1,81 +1,16 @@
 import scipy.io
 import numpy as np
 
-u_data = scipy.io.loadmat('ukpt3.mat')
+u_data = scipy.io.loadmat('ukpt666.mat')
 uKpts = u_data['uKpt']
 print(np.shape(uKpts))
 LsCell = np.array([[1,0,0],[0,1,0],[0,0,1]])
 NsCell = np.array([12,12,12])
 nocc = 1
-
-
-#kpts = np.array([[0,0,0], [np.pi,0,0],[0,np.pi,0],[np.pi,np.pi,0],[0,0,np.pi], [np.pi,0,np.pi],[0,np.pi,np.pi],[np.pi,np.pi,np.pi]])
-kpts = np.array([
-    [0, 0, 0],
-    [1.5708, 0, 0],
-    [3.1416, 0, 0],
-    [4.7124, 0, 0],
-    [0, 1.5708, 0],
-    [1.5708, 1.5708, 0],
-    [3.1416, 1.5708, 0],
-    [4.7124, 1.5708, 0],
-    [0, 3.1416, 0],
-    [1.5708, 3.1416, 0],
-    [3.1416, 3.1416, 0],
-    [4.7124, 3.1416, 0],
-    [0, 4.7124, 0],
-    [1.5708, 4.7124, 0],
-    [3.1416, 4.7124, 0],
-    [4.7124, 4.7124, 0],
-    [0, 0, 1.5708],
-    [1.5708, 0, 1.5708],
-    [3.1416, 0, 1.5708],
-    [4.7124, 0, 1.5708],
-    [0, 1.5708, 1.5708],
-    [1.5708, 1.5708, 1.5708],
-    [3.1416, 1.5708, 1.5708],
-    [4.7124, 1.5708, 1.5708],
-    [0, 3.1416, 1.5708],
-    [1.5708, 3.1416, 1.5708],
-    [3.1416, 3.1416, 1.5708],
-    [4.7124, 3.1416, 1.5708],
-    [0, 4.7124, 1.5708],
-    [1.5708, 4.7124, 1.5708],
-    [3.1416, 4.7124, 1.5708],
-    [4.7124, 4.7124, 1.5708],
-    [0, 0, 3.1416],
-    [1.5708, 0, 3.1416],
-    [3.1416, 0, 3.1416],
-    [4.7124, 0, 3.1416],
-    [0, 1.5708, 3.1416],
-    [1.5708, 1.5708, 3.1416],
-    [3.1416, 1.5708, 3.1416],
-    [4.7124, 1.5708, 3.1416],
-    [0, 3.1416, 3.1416],
-    [1.5708, 3.1416, 3.1416],
-    [3.1416, 3.1416, 3.1416],
-    [4.7124, 3.1416, 3.1416],
-    [0, 4.7124, 3.1416],
-    [1.5708, 4.7124, 3.1416],
-    [3.1416, 4.7124, 3.1416],
-    [4.7124, 4.7124, 3.1416],
-    [0, 0, 4.7124],
-    [1.5708, 0, 4.7124],
-    [3.1416, 0, 4.7124],
-    [4.7124, 0, 4.7124],
-    [0, 1.5708, 4.7124],
-    [1.5708, 1.5708, 4.7124],
-    [3.1416, 1.5708, 4.7124],
-    [4.7124, 1.5708, 4.7124],
-    [0, 3.1416, 4.7124],
-    [1.5708, 3.1416, 4.7124],
-    [3.1416, 3.1416, 4.7124],
-    [4.7124, 3.1416, 4.7124],
-    [0, 4.7124, 4.7124],
-    [1.5708, 4.7124, 4.7124],
-    [3.1416, 4.7124, 4.7124],
-    [4.7124, 4.7124, 4.7124]
-])
+nk = np.array([6,6,6])
+Nk = 216
+k_data = scipy.io.loadmat('kpt666.mat')
+kpts = k_data['kptGrid3D']
 recip_vec = np.linalg.inv(LsCell.T)*2*np.pi
 L_incre = LsCell/NsCell[:,np.newaxis]
 dvol = np.linalg.det(L_incre)
@@ -158,8 +93,6 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
             kpt2 = np.dot(LsCell_bz.T, trans_point)
 
             d2 = np.sum((kGrid - kpt2) ** 2, axis=1)
-            print("DISTANCES")
-            print(d2)
             idx_kpt2 = np.where(d2 < 1e-8)[0]
             if len(idx_kpt2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
@@ -181,7 +114,7 @@ def pair_product_recip_exchange(uKpt, kptGrid3D, rptGrid3D, NsCell, dvol, cell, 
     return rhokqmnG, kGrid, qGrid
 
 #RHO IS CHECKED - FINE
-Nk = 64
+
 rho_kqijG, kGrid, qGrid = pair_product_recip_exchange(uKpt = uKpts, kptGrid3D= kpts, rptGrid3D = rptGrid3D, NsCell = NsCell, dvol = dvol , cell = None, nbands= nocc)
 sum_res = np.sum(np.abs(rho_kqijG)**2 , axis = (0,2,3),keepdims=True)
 sum_res = np.reshape(sum_res, (rho_kqijG.shape[1], rho_kqijG.shape[4]), order='F')
@@ -224,7 +157,6 @@ SqG = SqG[:, idxG_localizer]
 
 LsCell_bz_local_norm2 = [sum(c ** 2 for c in v) for v in LsCell_bz_local]
 inv_LsCell_bz_local = np.array(LsCell_bz_local) / LsCell_bz_local_norm2
-nk = np.array([4,4,4])
 N = N_local * nk
 if N[0] % 2 == 0:
     G_1 = 2 * np.pi * np.concatenate((np.arange(0, N[0] // 2 + 1), np.arange(-N[0] // 2 + 1, 0)))

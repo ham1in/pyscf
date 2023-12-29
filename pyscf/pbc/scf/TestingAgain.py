@@ -13,7 +13,7 @@ kpts = np.array([[0,0,0], [np.pi,0,0],[0,np.pi,0],[np.pi,np.pi,0],[0,0,np.pi], [
 recip_vec = np.linalg.inv(LsCell.T)*2*np.pi
 L_incre = LsCell/NsCell[:,np.newaxis]
 dvol = np.linalg.det(L_incre)
-Nk = 8
+Nk = 27
 #CHECK UP TO THIS POINT
 #NOW, GRID IS EXACTLY THE SAME. FLIP Z AND X POSITIONS
 Z, Y, X = np.meshgrid(np.arange(0, NsCell[2]), np.arange(0, NsCell[1]), np.arange(0, NsCell[0]), indexing='ij')
