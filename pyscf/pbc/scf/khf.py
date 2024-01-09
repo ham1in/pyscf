@@ -1309,8 +1309,26 @@ def khf_ss(icell, ikpts, local = 5):
     print(timesub)
     return np.real(Ex_ss), np.real(E_standard), np.real(E_Madelung), time_scf, timesub
 
-def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
+def minimum_image(cell, kpts):
+    """
+    Compute the minimum image of k-points in 'kpts' in the first Brillouin zone
+
+    Arguments:
+        cell -- a cell instance
+        kpts -- a list of k-points
+
+    Returns:
+        kpts_bz -- a list of k-point in the first Brillouin zone
+    """
+    tmp_kpt = cell.get_scaled_kpts(kpts)
+    tmp_kpt = tmp_kpt - np.floor(tmp_kpt)
+    tmp_kpt[tmp_kpt > 0.5 - 1e-8] -= 1
+    kpts_bz = cell.get_abs_kpts(tmp_kpt)
+    return kpts_bz
+
+def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
     #Xin's version - using for test/benchmarking
+    from scipy.special import sici
     def minimum_image(cell, kpts):
         """
         Compute the minimum image of k-points in 'kpts' in the first Brillouin zone
@@ -1364,7 +1382,6 @@ def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
     #   Step 1: compute the pair product in reciproal space
 
     #   Step 1.1: evaluate AO on a real fine mesh in unit cell
-    mo_coeff_kpts = mo_coeff
     Lvec_real = kmf.cell.lattice_vectors()
     NsCell = kmf.cell.mesh
     L_delta = Lvec_real / NsCell[:, None]
@@ -1374,7 +1391,7 @@ def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
     xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
     mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
     rptGrid3D = mesh_idx @ L_delta
-    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kmf.kpts)
+    # aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kmf.kpts)
 
     #   Step 1.2: map q-mesh and k-mesh to BZ
     qGrid = minimum_image(cell, kpts - kpts[0, :])
@@ -1383,13 +1400,13 @@ def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
     #   Step 1.3: evaluate MO periodic component on a real fine mesh in unit cell
     nbands = nocc
     nG = np.prod(NsCell)
-    uKpts = np.zeros((nkpts, nbands, nG), dtype=complex)
-    for k in range(nkpts):
-        for n in range(nbands):
-            #   mo_coeff_kpts is of dimension (nkpts, nbasis, nband)
-            utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
-            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
-            uKpts[k, n, :] = np.squeeze(exp_part * utmp)
+    # uKpts = np.zeros((nkpts, nbands, nG), dtype=complex)
+    # for k in range(nkpts):
+    #     for n in range(nbands):
+    #         #   mo_coeff_kpts is of dimension (nkpts, nbasis, nband)
+    #         utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
+    #         exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
+    #         uKpts[k, n, :] = np.squeeze(exp_part * utmp)
 
             #   Step 1.4: compute the pair product
     Lvec_recip = cell.reciprocal_vectors()

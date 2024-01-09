@@ -42,7 +42,7 @@ def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
     nks = np.array(nks)
     nocc = cell.tot_electrons() // 2
     nkpts = np.prod(nks)
-
+    print(mo_coeff)
     #   compute standard exchange energy without any correction
     # kmf.exxdiv = None
     # if dm_kpts is None:
@@ -72,7 +72,7 @@ def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
     mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
     rptGrid3D = mesh_idx @ L_delta
     aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kmf.kpts)
-
+    print(aoval)
     #   Step 1.2: map q-mesh and k-mesh to BZ
     qGrid = minimum_image(cell, kpts - kpts[0, :])
     kGrid = minimum_image(cell, kpts)
@@ -124,6 +124,7 @@ def khf_exchange_ss(kmf, nks, mo_coeff, made, N_local=5):
     #   Step 2: Construct the structure factor
     SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
     SqG = SqG - nocc  # remove the zero order approximate nocc
+    print(SqG[0,0])
     assert (np.abs(SqG[0, 0]) < 1e-4)
 
     #   Exchange energy can be formulated as
