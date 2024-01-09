@@ -1067,8 +1067,7 @@ def khf_ss(icell, ikpts, local = 5):
 
     tscf = time.time()
     mf = scf.KHF(icell,ikpts,exxdiv = None)
-    print(mf.kernel())
-    print(mf.analyze())
+    sd = mf.kernel()
 
     # Assuming closed-shell, compute standard exchange energy and madelung constant
     Madelung =  madelung(icell,ikpts)
