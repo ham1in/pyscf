@@ -43,12 +43,12 @@ def kecut_output_str(kecut):
 
 L = 4
 cell = pbcgto.Cell()
-kmesh = [2,2, 2]
+kmesh = [2,2, 1]
 cell.build(unit='B',
            a=np.eye(3) * 4,
            mesh=[25, 25, 40],
            atom='''He 2 0 0; He 3 0 0''',
-           dimension=3,
+           dimension=2,
            low_dim_ft_type='inf_vacuum',
            verbose=5,
            rcut=7.427535697575829,
@@ -59,13 +59,15 @@ kpts = cell.make_kpts(kmesh)
 
 # Compute Mean Method Exchange
 print('testing mean method')
-mf = khf.KRHF(cell)
+mf = khf.KRHF(cell,exxdiv='ewald')
 mf.with_df = df.FFTDF(cell)
 mf.kpts = cell.make_kpts(kmesh)
-mf.exxdiv = 'mean'
 Nk = np.prod(kmesh)
+mf.exxdiv = 'ewald'
 e1 = mf.kernel()
 dm_un = mf.make_rdm1()
+
+mf.exxdiv = 'mean'
 Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
 Ek_mean = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
 Ek_mean /=2
