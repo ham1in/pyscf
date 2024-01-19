@@ -175,7 +175,7 @@ def get_j_e1_kpts(mydf, dm_kpts, kpts=np.zeros((1,3)), kpts_band=None):
     return vj_kpts
 
 def get_k_kpts(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None,
-               exxdiv=None):
+               exxdiv=None, **kwargs):
     '''Get the Coulomb (J) and exchange (K) AO matrices at sampled k-points.
 
     Args:

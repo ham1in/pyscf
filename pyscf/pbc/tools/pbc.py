@@ -331,6 +331,21 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
             Nk_1d = Nk
             kmesh = [Nk_1d, 1, 1]
 
+        # d = 3.
+        # Nk_1d = Nk ** (1. / d)
+        # diff_from_int = abs(Nk_1d - int(Nk_1d))
+        # kmesh = [Nk_1d, Nk_1d, Nk_1d]
+        # if (diff_from_int > 1e-6):
+        #     d = 2
+        #     kmesh = [Nk_1d, Nk_1d, 1]
+        #     diff_from_int = abs(Nk_1d - int(Nk_1d))
+        # if (diff_from_int > 1e-6):
+        #     d = 1
+        #     kmesh = [Nk_1d, 1, 1]
+        #     diff_from_int = abs(Nk_1d - int(Nk_1d))
+        # if d==0:
+        #     raise Exception("This shouldn't be reached")
+
         kmesh = np.array(kmesh)
 
         def V(xall, *args):
@@ -418,16 +433,14 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
         delta_h_cart = B @ delta_h_B  # WARNING: Assumes that the subspace box is a rectangular prism
         # vol_BZ_n = np.linalg.det(B_n)  # assume even split
 
-        def construct_vbar(qpts,Gpt_grid):
-            Nq = qpts.shape[0]
+        def construct_vbar(qpt,Gpt_grid):
+            Nq = 1 # assumes single Nq
             Ng = Gpt_grid.shape[0]
-            vbar = np.zeros(Ng,Nq)
-            for iq in prange(Nq):
-                for ig in range(Ng):
-                    q = qpts[:, iq]
-                    G = Gpt_grid[:, ig]
-                    vbar_G = V_mean(q, delta_h_cart, V, B, G)
-                    vbar[ig, iq] = vbar_G
+            vbar = np.zeros([Ng])
+            for ig in prange(Ng):
+                G = Gpt_grid[ig, :]
+                vbar_G = V_mean(qpt, delta_h_cart, V, B, G)
+                vbar[ig] = vbar_G
 
             return vbar
 
@@ -487,6 +500,7 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
         if cell.dimension > 0 and exxdiv == 'ewald' and len(G0_idx) > 0:
             coulG[G0_idx] += Nk*cell.vol*madelung(cell, kpts)
 
+    # if exxdiv != 'mean':
     coulG[equal2boundary] = 0
 
     # Scale the coulG kernel for attenuated Coulomb integrals.

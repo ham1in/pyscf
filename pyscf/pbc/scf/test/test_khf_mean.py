@@ -48,7 +48,7 @@ cell.build(unit='B',
            a=np.eye(3) * 4,
            mesh=[25, 25, 40],
            atom='''He 2 0 0; He 3 0 0''',
-           dimension=2,
+           dimension=3, # for mean method, we're not using truncated coulomb for now
            low_dim_ft_type='inf_vacuum',
            verbose=5,
            rcut=7.427535697575829,
@@ -58,9 +58,11 @@ cell.build(unit='B',
 kpts = cell.make_kpts(kmesh)
 
 # Compute Mean Method Exchange
+
 print('testing mean method')
 mf = khf.KRHF(cell,exxdiv='ewald')
-mf.with_df = df.FFTDF(cell)
+mf.with_df = df.FFTDF(cell,kpts).build()
+
 mf.kpts = cell.make_kpts(kmesh)
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
@@ -68,7 +70,8 @@ e1 = mf.kernel()
 dm_un = mf.make_rdm1()
 
 mf.exxdiv = 'mean'
-Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
+cell.dimension = 2
+Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
 Ek_mean = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
 Ek_mean /=2
 
@@ -77,6 +80,7 @@ print('Ek_mean (a.u.) is ')
 print(Ek_mean)
 
 # Compute Regular Exact Exchange for 2D System
+cell.dimension = 3
 mf = khf.KRHF(cell)
 mf.with_df = df.GDF(cell)
 mf.kpts = cell.make_kpts(kmesh)
