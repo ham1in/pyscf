@@ -266,6 +266,9 @@ def get_k_kpts(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None,
             # that arise from the FFT.
             if exxdiv == 'ewald' or exxdiv is None:
                 coulG = tools.get_coulG(cell, kpt2-kpt1, False, mydf, mesh)
+            elif exxdiv == 'mean':
+                # pass kpts to compute omega_n, volume per kpt
+                coulG = tools.get_coulG(cell, kpt2 - kpt1, False, mydf, mesh, kpts)
             else:
                 coulG = tools.get_coulG(cell, kpt2-kpt1, exxdiv, mydf, mesh)
             if is_zero(kpt1-kpt2):

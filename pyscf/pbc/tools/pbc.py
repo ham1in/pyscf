@@ -305,6 +305,135 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
 
         if cell.dimension < 3:
             raise NotImplementedError
+    elif exxdiv == 'mean':
+
+        from cubature import cubature
+        from functools import partial
+        import scipy.io
+        from numba import  prange
+
+
+        B = cell.reciprocal_vectors()
+        log = lib.logger.Logger(cell.stdout, cell.verbose)
+
+        log.debug("Using mean method for exchange")
+
+        Nk = kwargs['kpts'].shape[0] # kpts should be in rows?
+        if cell.dimension == 3:
+            Nk_1d = Nk**(1./3.)
+            assert(abs(Nk_1d- int(Nk_1d) < 1e-6) )
+            kmesh = [Nk_1d, Nk_1d, Nk_1d]
+        elif cell.dimension == 2:
+            Nk_1d = Nk**(1./2.)
+            assert(abs(Nk_1d- int(Nk_1d) < 1e-6) )
+            kmesh  = [Nk_1d, Nk_1d, 1]
+        else:
+            Nk_1d = Nk
+            kmesh = [Nk_1d, 1, 1]
+
+        kmesh = np.array(kmesh)
+
+        def V(xall, *args):
+            x = xall[:, 0]
+            y = xall[:, 1]
+            z = xall[:, 2]
+            return 4 * np.pi / (x ** 2 + y ** 2 + z ** 2)
+
+        def integratingV(Vcoul, G, xmin, xmax):
+            # integrate function V in the box
+            # xmin, xmax are 1d array of length 3
+            ndim = 3
+            fdim = 1
+            # partial(Vcoul,G)
+
+            # Apply q + G
+            xmin = xmin + G
+            xmax = xmax + G
+
+            # If integration region encloses zero, integrate in boxes.
+            if xmin[0] < 0 and xmin[1] < 0 and xmin[2] < 0 and xmax[0] > 0 and xmax[1] > 0 and xmax[2] > 0:
+                total_val = 0
+                total_err = 0
+
+                val, err = cubature(Vcoul, ndim, fdim, xmin, np.array([0.0, 0.0, 0.0]), vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([xmin[0], 0.0, 0.0]), np.array([0.0, xmax[1], xmax[2]]),
+                                    vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([xmin[0], xmin[1], 0.0]), np.array([0.0, 0.0, xmax[2]]),
+                                    vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([xmin[0], 0.0, xmin[2]]), np.array([0.0, xmax[1], 0.0]),
+                                    vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([0.0, 0.0, 0.0]), xmax, vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([0.0, xmin[1], xmin[2]]), np.array([xmax[0], 0.0, 0.0]),
+                                    vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([0.0, xmin[1], 0.0]), np.array([xmax[0], 0.0, xmax[2]]),
+                                    vectorized=True)
+                total_val += val
+                total_err += err
+
+                val, err = cubature(Vcoul, ndim, fdim, np.array([0.0, 0.0, xmin[2]]), np.array([xmax[0], xmax[1], 0.0]),
+                                    vectorized=True)
+                total_val += val
+                total_err += err
+
+                return total_val
+            return cubature(Vcoul, ndim, fdim, xmin, xmax, vectorized=True)[0]
+            # cubature
+
+        def V_mean(q, h, V=V, B=np.eye(3), G=0):
+            # obtaining mean value of V(q) over [q-h/2, q+h/2]
+            # q, h is 1d array of length 3, already in cartesian basis
+            # V is the Coulomb kernel
+            # B = [b1; b2; b3] is the reciprocal lattice vectors
+            xmin = q - h / 2.0
+            xmax = q + h / 2.0
+
+            def V_transformed(xall, *args):
+                return V(xall, )
+
+            return integratingV(V_transformed, G, xmin, xmax) / (h[0] * h[1] * h[2])
+
+        # bc = 0.5  # FBZ boundaries [-bc,bc]^3,'
+        # h = 1 / Nq**(1/3) # assume Nk x Nk x Nk
+        delta_h_B = np.array([1. / kmesh[0], 1. / kmesh[1], 1. / kmesh[2]])  # subspace box dimensions
+
+        B_n = B @ np.diag(delta_h_B)  # subspace box vectors
+        delta_h_cart = B @ delta_h_B  # WARNING: Assumes that the subspace box is a rectangular prism
+        # vol_BZ_n = np.linalg.det(B_n)  # assume even split
+
+        def construct_vbar(qpts,Gpt_grid):
+            Nq = qpts.shape[0]
+            Ng = Gpt_grid.shape[0]
+            vbar = np.zeros(Ng,Nq)
+            for iq in prange(Nq):
+                for ig in range(Ng):
+                    q = qpts[:, iq]
+                    G = Gpt_grid[:, ig]
+                    vbar_G = V_mean(q, delta_h_cart, V, B, G)
+                    vbar[ig, iq] = vbar_G
+
+            return vbar
+
+        # print("Computed v_mean for ", Nq, "q-points")
+
+        coulG = construct_vbar(k, Gv)
 
     else:
         # Ewald probe charge method to get the leading term of the finite size
