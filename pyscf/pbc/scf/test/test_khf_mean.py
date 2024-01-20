@@ -25,13 +25,16 @@ import numpy as np
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
 from pyscf.pbc import df
-
+from pyscf import lib
 import os
+
 cwd = os.getcwd()
-nthreads = 1
+nthreads = 16
 os.environ['OMP_NUM_THREADS'] = str(nthreads)
 os.environ['MKL_NUM_THREADS'] = str(nthreads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(nthreads)
+
+lib.num_threads(os.getenv('OMP_NUM_THREADS'))
 
 
 def nk_output_str(nk):
@@ -44,9 +47,15 @@ def kecut_output_str(kecut):
 L = 4
 cell = pbcgto.Cell()
 kmesh = [2,2, 1]
+A = np.eye(3) * 4,
+
+A = np.array([[4,0,0],
+              [0,4,0],
+              [0,0,8]])
+
 cell.build(unit='B',
-           a=np.eye(3) * 4,
-           mesh=[25, 25, 40],
+           a=A,
+           mesh=[11, 11, 21],
            atom='''He 2 0 0; He 3 0 0''',
            dimension=3, # for mean method, we're not using truncated coulomb for now
            low_dim_ft_type='inf_vacuum',
@@ -69,9 +78,17 @@ mf.exxdiv = 'ewald'
 e1 = mf.kernel()
 dm_un = mf.make_rdm1()
 
+#Regular exchange
+_, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
+Ek = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+Ek /=2
+print('Ek (a.u.) is ')
+print(Ek)
+
+# Mean method
 mf.exxdiv = 'mean'
 cell.dimension = 2
-Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
+_, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
 Ek_mean = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
 Ek_mean /=2
 
@@ -80,21 +97,21 @@ print('Ek_mean (a.u.) is ')
 print(Ek_mean)
 
 # Compute Regular Exact Exchange for 2D System
-cell.dimension = 3
-mf = khf.KRHF(cell)
-mf.with_df = df.GDF(cell)
-mf.kpts = cell.make_kpts(kmesh)
-Nk = np.prod(kmesh)
-e1 = mf.kernel()
-dm_un = mf.make_rdm1()
-Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
-Ek = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
-Ek /=2
-
-Ek = Ek.real
-print('Ek_regular (a.u.) is ')
-
-print(Ek)
+# cell.dimension = 3
+# mf = khf.KRHF(cell)
+# mf.with_df = df.FFTDF(cell)
+# mf.kpts = cell.make_kpts(kmesh)
+# Nk = np.prod(kmesh)
+# e1 = mf.kernel()
+# dm_un = mf.make_rdm1()
+# Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
+# Ek = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+# Ek /=2
+#
+# Ek = Ek.real
+# print('Ek_regular (a.u.) is ')
+#
+# print(Ek)
 # np.testing.assert_almost_equal(Ek, -2.2510515644, 4)
 # np.testing.assert_almost_equal(Ek, Ek_standard, 4)
 # f.write("Computed Ek: %.10E\n" % (ek.real))
