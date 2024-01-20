@@ -229,7 +229,12 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
                       'the number of PWs (=2*gs+1) along each direction.')
         mesh = [2*n+1 for n in kwargs['gs']]
     if Gv is None:
+        if mf is not None and exxdiv == 'mean':
+            input_dimension = cell.dimension
+            cell.dimension = 3
         Gv = cell.get_Gv(mesh)
+        if mf is not None and exxdiv == 'mean':
+            cell.dimension = input_dimension
 
     if abs(k).sum() > 1e-9:
         kG = k + Gv
