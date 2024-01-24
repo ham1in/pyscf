@@ -46,16 +46,16 @@ def kecut_output_str(kecut):
 
 L = 4
 cell = pbcgto.Cell()
-kmesh = [2,2, 1]
+kmesh = [4,4, 1]
 A = np.eye(3) * 4,
 
 A = np.array([[4,0,0],
               [0,4,0],
-              [0,0,8]])
+              [0,0,12]])
 
 cell.build(unit='B',
            a=A,
-           mesh=[11, 11, 21],
+           mesh=[21, 21, 61],
            atom='''He 2 0 0; He 3 0 0''',
            dimension=3, # for mean method, we're not using truncated coulomb for now
            low_dim_ft_type='inf_vacuum',

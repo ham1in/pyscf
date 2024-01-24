@@ -216,6 +216,7 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
             range-separated integral methods) which require Ewald probe charge
             to be computed with regular Coulomb interaction (1/r12).
     '''
+    log = lib.logger.Logger(cell.stdout, cell.verbose)
     exxdiv = exx
     if isinstance(exx, str):
         exxdiv = exx
@@ -230,6 +231,8 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
         mesh = [2*n+1 for n in kwargs['gs']]
     if Gv is None:
         if mf is not None and exxdiv == 'mean':
+
+            # log.debug("Using mean method for exchange, resetting cell.dimension to 3 for Gv")
             input_dimension = cell.dimension
             cell.dimension = 3
         Gv = cell.get_Gv(mesh)
@@ -313,15 +316,9 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
     elif exxdiv == 'mean':
 
         from cubature import cubature
-        from functools import partial
         import scipy.io
-        from numba import  prange
-
 
         B = cell.reciprocal_vectors()
-        log = lib.logger.Logger(cell.stdout, cell.verbose)
-
-        log.debug("Using mean method for exchange")
 
         Nk = kwargs['kpts'].shape[0] # kpts should be in rows?
         if cell.dimension == 3:
@@ -442,10 +439,13 @@ def get_coulG(cell, k=np.zeros(3), exx=False, mf=None, mesh=None, Gv=None,
             Nq = 1 # assumes single Nq
             Ng = Gpt_grid.shape[0]
             vbar = np.zeros([Ng])
-            for ig in prange(Ng):
-                G = Gpt_grid[ig, :]
-                vbar_G = V_mean(qpt, delta_h_cart, V, B, G)
-                vbar[ig] = vbar_G
+
+            step = Ng // lib.num_threads()
+            for ig_start, ig_end in lib.prange(0,Ng,step):
+                for ig in range(ig_start,ig_end):
+                    G = Gpt_grid[ig, :]
+                    vbar_G = V_mean(qpt, delta_h_cart, V, B, G)
+                    vbar[ig] = vbar_G
 
             return vbar
 

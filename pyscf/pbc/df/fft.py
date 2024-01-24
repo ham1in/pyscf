@@ -317,6 +317,8 @@ class FFTDF(lib.StreamObject):
     get_ao_pairs_G = get_ao_pairs = fft_ao2mo.get_ao_pairs_G
     get_mo_pairs_G = get_mo_pairs = fft_ao2mo.get_mo_pairs_G
 
+    get_electron_density = fft_jk.get_electron_density
+
     def update_mf(self, mf):
         mf = copy.copy(mf)
         mf.with_df = self
