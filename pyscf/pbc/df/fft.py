@@ -318,6 +318,7 @@ class FFTDF(lib.StreamObject):
     get_mo_pairs_G = get_mo_pairs = fft_ao2mo.get_mo_pairs_G
 
     get_electron_density = fft_jk.get_electron_density
+    get_rhoG = fft_jk.get_rhoG
 
     def update_mf(self, mf):
         mf = copy.copy(mf)

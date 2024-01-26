@@ -29,6 +29,72 @@ from pyscf.pbc.df.df_jk import _format_dms, _format_kpts_band, _format_jks
 from pyscf.pbc.df.df_jk import _ewald_exxdiv_for_G0
 from pyscf.pbc.lib.kpts_helper import is_zero
 
+def get_rhoG(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None):
+    '''Get the Coulomb (J) AO matrix at sampled k-points.
+
+    Args:
+        dm_kpts : (nkpts, nao, nao) ndarray or a list of (nkpts,nao,nao) ndarray
+            Density matrix at each k-point.  If a list of k-point DMs, eg,
+            UHF alpha and beta DM, the alpha and beta DMs are contracted
+            separately.
+        kpts : (nkpts, 3) ndarray
+
+    Kwargs:
+        kpts_band : (3,) ndarray or (*,3) ndarray
+            A list of arbitrary "band" k-points at which to evalute the matrix.
+
+    Returns:
+        vj : (nkpts, nao, nao) ndarray
+        or list of vj if the input dm_kpts is a list of DMs
+    '''
+    cell = mydf.cell
+    mesh = mydf.mesh
+
+    ni = mydf._numint
+    # make_rho, nset, nao = ni._gen_rho_evaluator(cell, dm_kpts, hermi)
+    make_rhoR_k, nset, nao = ni._gen_rho_k_evaluator(cell, dm_kpts, hermi)
+
+    dm_kpts = lib.asarray(dm_kpts, order='C')
+    dms = _format_dms(dm_kpts, kpts)
+    nset, nkpts, nao = dms.shape[:3]
+
+    coulG = tools.get_coulG(cell, mesh=mesh)
+    ngrids = len(coulG)
+
+    if hermi == 1 or is_zero(kpts):
+        # Should not happen here
+        vR = rhoG = np.zeros((nkpts,ngrids))
+        rhoR = np.zeros((nkpts,ngrids))
+        for ao_ks_etc, p0, p1 in mydf.aoR_loop(mydf.grids, kpts):
+            ao_ks, mask = ao_ks_etc[0], ao_ks_etc[2]
+            for i in range(nset):
+                rhoR += make_rhoR_k(i, ao_ks, mask, 'LDA').real
+            ao = ao_ks = None
+
+        for i in range(nkpts):
+            rhoG[i] = tools.fft(rhoR[i], mesh)
+            vG = rhoG[i]
+            vR[i] = tools.ifft(vG, mesh).real
+
+    else:  # vR may be complex if the underlying density is complex
+        raise NotImplementedError
+        vR = rhoR = rhoG = np.zeros((nset,ngrids), dtype=np.complex128)
+        for ao_ks_etc, p0, p1 in mydf.aoR_loop(mydf.grids, kpts):
+            ao_ks, mask = ao_ks_etc[0], ao_ks_etc[2]
+            for i in range(nset):
+                for k, ao in enumerate(ao_ks):
+                    ao_dm = lib.dot(ao, dms[i,k])
+                    rhoR[i,p0:p1] += np.einsum('xi,xi->x', ao_dm, ao.conj())
+        rhoR *= 1./nkpts
+
+        for i in range(nset):
+            rhoG[i] = tools.fft(rhoR[i], mesh)
+            # vG = coulG * rhoG
+            vG = rhoG[i]
+            vR[i] = tools.ifft(vG, mesh)
+
+    return rhoG
+
 def get_electron_density(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None):
     '''Get the Coulomb (J) AO matrix at sampled k-points.
 
