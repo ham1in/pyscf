@@ -1524,7 +1524,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
         tmp = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
 
-    #ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
+    ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
 
     #   Step 5: apply the correction
     e_ex_ss = made + prefactor_ex * ss_correction
