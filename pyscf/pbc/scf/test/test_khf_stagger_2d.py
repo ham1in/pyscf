@@ -37,10 +37,11 @@ cell.build(unit='B',
            )
 kpts = cell.make_kpts(kmesh)
 # Compute Staggered Mesh Exact Exchange for 2D System
-Ek_stagger_M, Ek_stagger, Ek_standard = khf.khf_stagger(icell=cell,ikpts=kpts,version = "Non_SCF")
+# mf.with_df = df.FFTDF(cell)
+Ek_stagger_M, Ek_stagger, Ek_standard = khf.khf_stagger(icell=cell,ikpts=kpts,version = "Non_SCF",df_type=df.FFTDF)
 print('Ek_stagger_M, Ek_stagger (a.u.) is')
 print(Ek_stagger_M,Ek_stagger)
-np.testing.assert_almost_equal(Ek_stagger_M, -2.24607552975387, 4)
+np.testing.assert_almost_equal(Ek_stagger_M, -2.2766118557347053, 4)
 
 # f = open(cell.output, "a")
 # f.write("E_stagger_M: %.10E\n" % (E_stagger_M))
@@ -48,7 +49,7 @@ np.testing.assert_almost_equal(Ek_stagger_M, -2.24607552975387, 4)
 
 # Compute Regular Exact Exchange for 2D System
 mf = khf.KRHF(cell)
-mf.with_df = df.GDF(cell)
+mf.with_df = df.FFTDF(cell)
 mf.kpts = cell.make_kpts(kmesh)
 Nk = np.prod(kmesh)
 e1 = mf.kernel()
@@ -61,7 +62,7 @@ Ek = Ek.real
 print('Ek_regular (a.u.) is ')
 
 print(Ek)
-np.testing.assert_almost_equal(Ek, -2.2510515644, 4)
+np.testing.assert_almost_equal(Ek, -2.2845080096640933, 4)
 np.testing.assert_almost_equal(Ek, Ek_standard, 4)
 # f.write("Computed Ek: %.10E\n" % (ek.real))
 
