@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF"):
+def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -880,6 +880,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
     def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None):
         #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
+        nk = get_monkhorst_pack_size(icell, ikpts)
         if ew_eta is None or ew_cut is None:
             ew_eta, ew_cut = cell_input.get_ewald_params(cell_input.precision, cell_input.mesh)
         chargs = cell_input.atom_charges()
@@ -887,26 +888,88 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ke_cutoff = -2 * ew_eta ** 2 * log_precision
         #Get FFT mesh from cutoff value
         mesh = cell_input.cutoff_to_mesh(ke_cutoff)
+        # if cell_input.dimension <= 2:
+        #     mesh[2] = 1
+        # if cell_input.dimension == 1:
+        #     mesh[1] = 1
         #Get grid
         Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh = mesh)
         #Get q+G points
         G_combined = Gv + shifted
-        #Calculate |q+G|^2 values of the shifted points
-        qG2 = np.einsum('gi,gi->g',G_combined,G_combined)
-        #Note: Stephen - remove those points where q+G = 0
-        qG2[qG2==0] = 1e200
-        #Now putting the ingredients together
-        component = 4*np.pi/qG2*np.exp(-qG2/(4*ew_eta**2))
-        #First term
-        sum_term = weights*np.einsum('i->',component).real
-        #Second Term
-        sub_term = 2*ew_eta/np.sqrt(np.pi)
-        return sum_term - sub_term
+        absG2 = np.einsum('gi,gi->g', G_combined, G_combined)
 
+
+        if cell_input.dimension ==3:
+            # Calculate |q+G|^2 values of the shifted points
+            qG2 = np.einsum('gi,gi->g', G_combined, G_combined)
+            # Note: Stephen - remove those points where q+G = 0
+            qG2[qG2 == 0] = 1e200
+            # Now putting the ingredients together
+            component = 4 * np.pi / qG2 * np.exp(-qG2 / (4 * ew_eta ** 2))
+            #First term
+            sum_term = weights*np.einsum('i->',component).real
+            #Second Term
+            sub_term = 2*ew_eta/np.sqrt(np.pi)
+            return sum_term - sub_term
+
+        elif cell_input.dimension == 2:  # Truncated Coulomb
+            from scipy.special import erfc, erf
+            # The following 2D ewald summation is taken from:
+            # R. Sundararaman and T. Arias PRB 87, 2013
+            def fn(eta, Gnorm, z):
+                Gnorm_z = Gnorm * z
+                large_idx = Gnorm_z > 20.0
+                ret = np.zeros_like(Gnorm_z)
+                x = Gnorm / 2. / eta + eta * z
+                with np.errstate(over='ignore'):
+                    erfcx = erfc(x)
+                    ret[~large_idx] = np.exp(Gnorm_z[~large_idx]) * erfcx[~large_idx]
+                    ret[large_idx] = np.exp((Gnorm * z - x ** 2)[large_idx]) * erfcx[large_idx]
+                return ret
+
+            def gn(eta, Gnorm, z):
+                return np.pi / Gnorm * (fn(eta, Gnorm, z) + fn(eta, Gnorm, -z))
+
+            def gn0(eta, z):
+                return -2 * np.pi * (z * erf(eta * z) + np.exp(-(eta * z) ** 2) / eta / np.sqrt(np.pi))
+
+            b = cell_input.reciprocal_vectors()
+            inv_area = np.linalg.norm(np.cross(b[0], b[1])) / (2 * np.pi) ** 2
+            # Perform the reciprocal space summation over  all reciprocal vectors
+            # within the x,y plane.
+            planarG2_idx = np.logical_and(Gv[:, 2] == 0, absG2 > 0.0)
+
+            G_combined = G_combined[planarG2_idx]
+            absG2 = absG2[planarG2_idx]
+            absG = absG2 ** (0.5)
+            # Performing the G != 0 summation.
+            coords = np.array([[0,0,0]])
+            rij = coords[:, None, :] - coords[None, :, :] # should be just the zero vector for correction.
+            Gdotr = np.einsum('ijx,gx->ijg', rij, G_combined)
+            ewg = np.einsum('i,j,ijg,ijg->', chargs, chargs, np.cos(Gdotr),
+                            gn(ew_eta, absG, rij[:, :, 2:3]))
+            # Performing the G == 0 summation.
+            # ewg += np.einsum('i,j,ij->', chargs, chargs, gn0(ew_eta, rij[:, :, 2]))
+
+            ewg *= inv_area # * 0.5
+
+            ewg_analytical = 2 * ew_eta / np.sqrt(np.pi)
+            return ewg - ewg_analytical
+
+
+    if df_type == None:
+        if icell.dimension <=2:
+            df_type = df.GDF
+        else:
+            df_type = df.FFTDF
 
     if version == "One_shot":
         nk = get_monkhorst_pack_size(icell, ikpts)
         shift = icell.get_abs_kpts([0.5 / n for n in nk])
+        if icell.dimension <=2:
+            shift[2] =  0
+        elif icell.dimension == 1:
+            shift[1] = 0
         Nk = np.prod(nk) * 2
         print("Shift is: " + str(shift))
         shifted_mesh = ikpts + shift
@@ -914,6 +977,8 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         print(combined)
 
         mf2 = scf.KHF(icell, combined)
+        mf2.with_df = df_type(icell, combined).build() #For 2d,1d, df_type cannot be FFTDF
+
         print(mf2.kernel())
         d_m = mf2.make_rdm1()
         #Get dm at kpoints in unshifted mesh
@@ -932,7 +997,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
-        while True:
+        while True and icell.dimension !=1:
             Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
@@ -950,7 +1015,6 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         nocc = mf2.cell.tot_electrons() // 2
         E_stagger_M = E_stagger + nocc * conv_Madelung
         print("One Shot")
-        return np.real(E_stagger_M), np.real(E_stagger)
 
     elif version == "Two_shot":
         #Regular scf calculation
@@ -961,6 +1025,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         shifted_mesh = mfs.kpts + shift
         #Calculation on shifted mesh
         mf2 = scf.KHF(icell, shifted_mesh)
+        mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
         #Get K matrix on shifted kpts, dm from unshifted mesh
@@ -975,7 +1040,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
-        while True:
+        while True and icell.dimension !=1 :
             Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
@@ -994,13 +1059,18 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         E_stagger_M = E_stagger + nocc * conv_Madelung
 
         print("Two Shot")
-        return np.real(E_stagger_M), np.real(E_stagger)
     else:
-        mf2 = scf.KHF(icell,ikpts)
+        mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
+        mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
+
         print(mf2.kernel())
         #Defining size and making shifted mesh
         nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
         shift = mf2.cell.get_abs_kpts([0.5/n for n in nk])
+        if icell.dimension <=2:
+            shift[2] =  0
+        elif icell.dimension == 1:
+            shift[1] = 0
         shifted_mesh = mf2.kpts + shift
         print(mf2.kpts)
         print(shifted_mesh)
@@ -1016,7 +1086,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
 
         #Construct the Fock Matrix
         h1e = get_hcore(mf2, cell = mf2.cell, kpts = shifted_mesh)
-        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
+        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh,exxdiv='ewald')
         #Veff = Jmat - Kmat/2
         Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
         F_shift = h1e + Veff
@@ -1027,17 +1097,13 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         Nk = np.prod(nk)
         E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
         E_stagger/=2
-        #Standard Exchange energy
-        #Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts)
-        #E_standard = -1./Nk * np.einsum('kij,kji', dm_un,Ko ) * 0.5
-        #E_standard /=2
 
         count_iter = 1
         ecell = set_cell(mf2)
         ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
         prev = 0
         conv_Madelung = 0
-        while True:
+        while True and icell.dimension !=1:
             Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
@@ -1055,7 +1121,12 @@ def khf_stagger(icell,ikpts, version = "Non_SCF"):
         nocc = mf2.cell.tot_electrons()//2
         E_stagger_M = E_stagger + nocc*conv_Madelung
         print("Non SCF")
-    return np.real(E_stagger_M), np.real(E_stagger)
+    # Standard Exchange energy
+    Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
+    E_standard = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+    E_standard /= 2
+
+    return np.real(E_stagger_M), np.real(E_stagger), np.real(E_standard)
 
 def khf_ss(icell, ikpts, local = 5):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
@@ -1524,7 +1595,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
         tmp = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
 
-    #ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
+    ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
 
     #   Step 5: apply the correction
     e_ex_ss = made + prefactor_ex * ss_correction
@@ -1542,11 +1613,8 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-def khf_2d(kmf, nks, uKpts, made, N_local = 5):
+def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5):
     from scipy.special import sici
-    # Change log
-
-    # Volumes to Areas. Identify non-periodic direction length.
     from scipy.special import iv
     def minimum_image(cell, kpts):
         """
@@ -1606,6 +1674,7 @@ def khf_2d(kmf, nks, uKpts, made, N_local = 5):
     nG = np.prod(NsCell)
 
     #   Step 1.4: compute the pair product
+    # Sample Unit cell in Reciprocal Space (Unchanged)
     Lvec_recip = cell.reciprocal_vectors()
     Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
     Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
@@ -1645,34 +1714,17 @@ def khf_2d(kmf, nks, uKpts, made, N_local = 5):
     SqG = SqG - nocc  # remove the zero order approximate nocc
     assert (np.abs(SqG[0, 0]) < 1e-4)
 
-    #   Exchange energy can be formulated as
-    #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
-    # prefactor_ex = -1 / (8 * np.pi ** 3)
-    # # Area
-    # bz_dvol = np.abs(np.linalg.det(Lvec_recip))/vac_size_bz / nkpts
-
-    #   Side Step: double check the validity of SqG by computing the exchange energy
-    # if False:
-    #     CoulG = np.zeros_like(SqG)
-    #     for iq, qpt in enumerate(qGrid):
-    #         qG = qpt[None, :] + GptGrid3D
-    #         norm2_qG = np.sum(qG ** 2, axis=1)
-    #         CoulG[iq, :] = 4 * np.pi / norm2_qG
-    #         CoulG[iq, norm2_qG < 1e-8] = 0
-    #     Ex = prefactor_ex * bz_dvol * np.sum((SqG + nocc) * CoulG)
-    #     print(f'Ex = {Ex}')
-
-    #   Step 3: construct Fourier Approximation of S(q+G)h(q+G)
-
     #   Step 3.1: define the local domain as multiple of BZ
     LsCell_bz_local = N_local * Lvec_recip
+    LsCell_bz_local = [N_local * Lvec_recip[0], N_local * Lvec_recip[1], Lvec_recip[2]]
     LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    H = lambda q: poly_localizer(q, r1, 6)
+    H = lambda q: poly_localizer(q, r1, 4)
 
     #   reciprocal lattice within the local domain
+    #   Needs modification for 2D
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
     Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0] , indexing='ij')
     GptGrid3D_local = np.hstack(
@@ -1693,21 +1745,19 @@ def khf_2d(kmf, nks, uKpts, made, N_local = 5):
 
     #   Step 3.2: compute the Fourier transform of 1/|q|^2
     nqG_local = [N_local * nks[0], N_local * nks[1], 1]  # lattice size along each dimension in the real-space (equal to q + G size)
-    Lvec_real_local = Lvec_real / N_local  # dual real cell of local domain LsCell_bz_local
-
+    Lvec_real_local = [Lvec_real[0]/N_local, Lvec_real[1]/N_local, Lvec_real[2]]  # dual real cell of local domain LsCell_bz_local
     Rx = np.fft.fftfreq(nqG_local[0], d=1 / nqG_local[0])
     Ry = np.fft.fftfreq(nqG_local[1], d=1 / nqG_local[1])
     Rz = np.fft.fftfreq(nqG_local[2], d=1 / nqG_local[2])
     Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
     RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
 
-    #   Kernel from Fourier Interpolation (2D version)
     from scipy.integrate import quad
-    from scipy.special import gammaincc
-    from scipy.special import gamma
+    from scipy.special import i0
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
+    #np.pi * vac_size if x ==0 else
     def kernel_func(R, vac_size, a,b):
-        func = lambda x: 2*np.pi * vac_size if x ==0 else 2*np.pi* (1-np.exp(-vac_size/2 * x))/x * iv(0,-1j * x * R)
+        func = lambda x: 2*np.pi * (1-np.exp(-vac_size/2 * x))/x * iv(0,-1j * x * R)
         integral = quad(func, a, b, limit = 50)[0]
         return integral
 
@@ -1723,11 +1773,12 @@ def khf_2d(kmf, nks, uKpts, made, N_local = 5):
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGrid3D_local
+        qG_no_z = qG[:,0:2]
         tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1) # (1 - np.exp(-vac_size/2 * np.sum(qG **2, axis =1))) * np.cos(vac_size/2 * qG[2])
-        coul = 1- np.exp(-vac_size/2 * np.sqrt(np.sum(qG **2, axis =1)))
-        tmp = tmp * coul * np.cos(vac_size/2 * qG[:,2])
+        coul = np.exp(-vac_size/2 * np.sqrt(np.sum(qG_no_z **2, axis =1)))
+        tmp = tmp * (1- coul * np.cos(vac_size/2 * qG[:,2]))
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
-        ss_correction += np.sum(tmp)/nkpts
+        ss_correction -= np.sum(tmp)/nkpts
 
     #   Integral with Fourier Approximation
     for iq, qpt in enumerate(qGrid):
@@ -1735,10 +1786,12 @@ def khf_2d(kmf, nks, uKpts, made, N_local = 5):
         exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
         tmp = (exp_mat @ CoulR) / (np.linalg.norm(np.cross(LsCell_bz_local[0], LsCell_bz_local[1])))
         tmp = SqG_local[iq, :].T * H(qG) * tmp
-        ss_correction -= np.real(np.sum(tmp))/nkpts
+        ss_correction += np.real(np.sum(tmp))/nkpts
 
-    ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
-    print(made)
+    bz_dvol = np.abs(np.linalg.det(Lvec_recip))
+    #ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
+    ss_correction = 4 * np.pi * ss_correction * 1/(8* np.pi**3) * bz_dvol/np.linalg.norm(Lvec_recip[2])
+
     #   Step 5: apply the correction
     e_ex_ss = made + ss_correction
 

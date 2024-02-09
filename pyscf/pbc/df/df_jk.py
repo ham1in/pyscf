@@ -952,11 +952,13 @@ def _ewald_exxdiv_for_G0(cell, kpts, dms, vk, kpts_band=None):
     elif kpts_band is None or numpy.array_equal(kpts, kpts_band):
         for k in range(len(kpts)):
             for i,dm in enumerate(dms):
+                operand = reduce(numpy.dot, (s[k], dm[k], s[k]))
                 vk[i,k] += madelung * reduce(numpy.dot, (s[k], dm[k], s[k]))
     else:
         for k, kpt in enumerate(kpts):
             for kp in member(kpt, kpts_band.reshape(-1,3)):
                 for i,dm in enumerate(dms):
+
                     vk[i,kp] += madelung * reduce(numpy.dot, (s[k], dm[k], s[k]))
 
 
