@@ -1079,6 +1079,40 @@ class KNumInt(numint.NumInt):
                               mo_occ_kpts[k], non0tab, xctype, with_lapl, verbose)
         rhoR *= 1./nkpts
         return rhoR
+    def eval_rho2_k(self, cell, ao_kpts, mo_coeff_kpts, mo_occ_kpts,
+                  non0tab=None, xctype='LDA', with_lapl=True, verbose=None):
+        nkpts = len(ao_kpts)
+        ng = numpy.prod(cell.mesh)
+        rhoR = numpy.zeros([nkpts, ng])
+        for k in range(nkpts):
+            rhoR[k,:] = eval_rho2(cell, ao_kpts[k], mo_coeff_kpts[k],
+                              mo_occ_kpts[k], non0tab, xctype, with_lapl, verbose)
+        rhoR *= 1./nkpts
+        return rhoR
+
+    def eval_rho_k(self, cell, ao_kpts, dm_kpts, non0tab=None, xctype='LDA',
+                   hermi=0, with_lapl=True, verbose=None):
+        '''Collocate the density (opt. gradients) on the real-space grid.
+
+         Args:
+             cell : Mole or Cell object
+             ao_kpts : (nkpts, ngrids, nao) ndarray
+                 AO values at each k-point
+             dm_kpts: (nkpts, nao, nao) ndarray
+                 Density matrix at each k-point
+
+         Returns:
+            rhoR : (ngrids,) ndarray
+         '''
+        nkpts = len(ao_kpts)
+        rho_ks = [eval_rho(cell, ao_kpts[k], dm_kpts[k], non0tab, xctype,
+                           hermi, with_lapl, verbose)
+                  for k in range(nkpts)]
+        dtype = numpy.result_type(*rho_ks)
+
+
+        rho_ks *= 1. / nkpts
+        return rho_ks
 
     def nr_vxc(self, cell, grids, xc_code, dms, spin=0, relativity=0, hermi=1,
                kpts=None, kpts_band=None, max_memory=2000, verbose=None):
@@ -1216,6 +1250,28 @@ class KNumInt(numint.NumInt):
             def make_rho(idm, ao_kpts, non0tab, xctype):
                 return self.eval_rho(cell, ao_kpts, dms[idm], non0tab, xctype,
                                      hermi, with_lapl)
+        return make_rho, ndms, nao
+
+    def _gen_rho_k_evaluator(self, cell, dms, hermi=0, with_lapl=False, grids=None):
+        if getattr(dms, 'mo_coeff', None) is not None:
+            mo_coeff = dms.mo_coeff
+            mo_occ = dms.mo_occ
+            if isinstance(dms[0], numpy.ndarray) and dms[0].ndim == 2:
+                mo_coeff = [mo_coeff]
+                mo_occ = [mo_occ]
+            nao = cell.nao_nr()
+            ndms = len(mo_occ)
+            def make_rho(idm, ao, non0tab, xctype):
+                return self.eval_rho2_k(cell, ao, mo_coeff[idm], mo_occ[idm],
+                                      non0tab, xctype, with_lapl)
+        else:
+            if isinstance(dms[0], numpy.ndarray) and dms[0].ndim == 2:
+                dms = [numpy.stack(dms)]
+            nao = dms[0].shape[-1]
+            ndms = len(dms)
+            def make_rho(idm, ao_kpts, non0tab, xctype):
+                return self.eval_rho_k(cell, ao_kpts, dms[idm], non0tab, xctype,
+                                       hermi, with_lapl)
         return make_rho, ndms, nao
 
     nr_rks_fxc = nr_rks_fxc

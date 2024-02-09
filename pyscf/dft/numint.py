@@ -2861,7 +2861,7 @@ class NumInt(_NumIntMixin):
 
     block_loop = _block_loop
 
-    def _gen_rho_evaluator(self, mol, dms, hermi=0, with_lapl=True, grids=None):
+    def _gen_rho_evaluator(self, mol, dms, hermi=0, with_lapl=True, grids=None, use_rhoR_k=False):
         if getattr(dms, 'mo_coeff', None) is not None:
             #TODO: test whether dm.mo_coeff matching dm
             mo_coeff = dms.mo_coeff
