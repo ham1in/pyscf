@@ -84,13 +84,13 @@ def build_carbon_chain_cell(nk=(1, 1, 1), kecut=100, bla_angstrom=0.128, a_angst
 
 kmesh = [8,1, 1]
 bla = 0.125
-cell, kpts= build_carbon_chain_cell(nk=kmesh,kecut=100,bla_angstrom=bla,basis='gth-dzv')
+cell, kpts= build_carbon_chain_cell(nk=kmesh,kecut=60,bla_angstrom=bla,basis='gth-szv')
 
 # Compute Mean Method Exchange
 
 print('testing regular method')
 mf = khf.KRHF(cell,exxdiv='ewald')
-mf.with_df = df.MDF(cell,kpts).build()
+mf.with_df = df.FFTDF(cell,kpts).build()
 
 # mf.kpts = cell.make_kpts(kmesh)
 Nk = np.prod(kmesh)
@@ -113,15 +113,15 @@ print(Ek)
 
 
 # Mean method
-# mf.exxdiv = 'mean'
-# cell.dimension = 2
-# _, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
-# Ek_mean = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
-# Ek_mean /=2
-#
-# Ek_mean = Ek_mean.real
-# print('Ek_mean (a.u.) is ')
-# print(Ek_mean)
+mf.exxdiv = 'mean'
+cell.dimension = 1
+_, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
+Ek_mean = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+Ek_mean /=2.
+
+Ek_mean = Ek_mean.real
+print('Ek_mean (a.u.) is ')
+print(Ek_mean)
 
 # Extract rhoG
 # J_no_coulG = mf.with_df.get_electron_density(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)
