@@ -62,7 +62,7 @@ def get_rhoG(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None):
     ngrids = len(coulG)
 
     if hermi == 1 or is_zero(kpts):
-        # Should not happen here
+        # Should happen here
         vR = rhoG = np.zeros((nkpts,ngrids))
         rhoR = np.zeros((nkpts,ngrids))
         for ao_ks_etc, p0, p1 in mydf.aoR_loop(mydf.grids, kpts):
@@ -76,24 +76,8 @@ def get_rhoG(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None):
             vG = rhoG[i]
             vR[i] = tools.ifft(vG, mesh).real
 
-    else:  # vR may be complex if the underlying density is complex
-        raise NotImplementedError
-        vR = rhoR = rhoG = np.zeros((nset,ngrids), dtype=np.complex128)
-        for ao_ks_etc, p0, p1 in mydf.aoR_loop(mydf.grids, kpts):
-            ao_ks, mask = ao_ks_etc[0], ao_ks_etc[2]
-            for i in range(nset):
-                for k, ao in enumerate(ao_ks):
-                    ao_dm = lib.dot(ao, dms[i,k])
-                    rhoR[i,p0:p1] += np.einsum('xi,xi->x', ao_dm, ao.conj())
-        rhoR *= 1./nkpts
 
-        for i in range(nset):
-            rhoG[i] = tools.fft(rhoR[i], mesh)
-            # vG = coulG * rhoG
-            vG = rhoG[i]
-            vR[i] = tools.ifft(vG, mesh)
-
-    return rhoG
+    return rhoG, rhoR
 
 def get_electron_density(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None):
     '''Get the Coulomb (J) AO matrix at sampled k-points.

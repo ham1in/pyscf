@@ -29,7 +29,7 @@ from pyscf import lib
 import os
 
 cwd = os.getcwd()
-nthreads = 16
+nthreads = 24
 os.environ['OMP_NUM_THREADS'] = str(nthreads)
 os.environ['MKL_NUM_THREADS'] = str(nthreads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(nthreads)
@@ -45,7 +45,7 @@ def kecut_output_str(kecut):
     return '-kecut' + str(kecut)
 
 
-def build_carbon_chain_cell(nk=(1, 1, 1), kecut=100, bla_angstrom=0.128, a_angstrom=2.578, vac_angstrom=6.0):
+def build_carbon_chain_cell(nk=(1, 1, 1), kecut=100, bla_angstrom=0.128, a_angstrom=2.578, vac_angstrom=6.0, basis='gth-szv'):
     cell = pbcgto.Cell()
     cell.unit = 'angstrom'  # Not bohr!
 
@@ -63,14 +63,14 @@ def build_carbon_chain_cell(nk=(1, 1, 1), kecut=100, bla_angstrom=0.128, a_angst
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = 'gth-szv'
+    cell.basis = basis
     cell.precision = 1e-8
     cell.pseudo = 'gth-pbe'  # PAW-PBE used in Gruneis paper
     cell.ke_cutoff = kecut
     cell.max_memory = 30000
 
     cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=True)
+    kpts = cell.make_kpts(nk, wrap_around=False)
     return cell, kpts
 
 # L = 4
@@ -82,24 +82,30 @@ def build_carbon_chain_cell(nk=(1, 1, 1), kecut=100, bla_angstrom=0.128, a_angst
 #               [0,0,4]])
 
 
-kmesh = [4,1, 1]
+kmesh = [8,1, 1]
 bla = 0.125
-cell, kpts= build_carbon_chain_cell(nk=kmesh,kecut=56,bla_angstrom=bla)
+cell, kpts= build_carbon_chain_cell(nk=kmesh,kecut=100,bla_angstrom=bla,basis='gth-dzv')
 
 # Compute Mean Method Exchange
 
 print('testing regular method')
 mf = khf.KRHF(cell,exxdiv='ewald')
-mf.with_df = df.FFTDF(cell,kpts).build()
+mf.with_df = df.MDF(cell,kpts).build()
 
-mf.kpts = cell.make_kpts(kmesh)
+# mf.kpts = cell.make_kpts(kmesh)
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
 e1 = mf.kernel()
 dm_un = mf.make_rdm1()
 
 #Regular exchange
-_, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = False)
+# Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un, kpts = mf.kpts, kpts_band = mf.kpts, with_j = True)
+Jo, Ko = mf.get_jk(cell = mf.cell, dm_kpts = dm_un)
+
+vhf_kpts = mf.get_veff(mf.cell, dm_un)
+e_coul = 1./Nk * np.einsum('kij,kji', dm_un, vhf_kpts) * 0.5
+
+
 Ek = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
 Ek /=2
 print('Ek (a.u.) is ')
@@ -118,22 +124,30 @@ print(Ek)
 # print(Ek_mean)
 
 # Extract rhoG
-J_no_coulG = mf.with_df.get_electron_density(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)
-electron_density_l2 = 1. / Nk * np.einsum('kij,kji', J_no_coulG, dm_un)
-
-print('electron_density_l2 (a.u.) is ', electron_density_l2.real)
-print('Printing data for rho(q)')
-
-rhoG = mf.with_df.get_rhoG(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)
-electron_density_l2 = 1. / Nk * np.einsum('kij,kji', J_no_coulG, dm_un)
-
-rhok = np.sum(rhoG,axis=1)
-
-# rhok_G0 = rhoG[:,0]
-print('Saving data for rho(q)')
-print(rhok)
-ng = 1
-for ig in range(ng):
-    print('G index', ig)
-    rhok_G = rhoG[:, ig]
-    print(rhok_G)
+# J_no_coulG = mf.with_df.get_electron_density(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)
+# electron_density_l2 = 1. / Nk * np.einsum('kij,kji', J_no_coulG, dm_un)
+#
+# print('electron_density_l2 (a.u.) is ', electron_density_l2.real)
+# print('Printing data for rho(q)')
+#
+# rhoG, rhoR = mf.with_df.get_rhoG(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)
+# electron_density_l2 = 1. / Nk * np.einsum('kij,kji', J_no_coulG, dm_un)
+#
+# rhok = np.sum(rhoG,axis=1)
+# rhoR = np.sum(rhoR,axis=0)
+#
+# mesh = cell.mesh
+# grid = cell.gen_uniform_grids(mesh = mesh)
+#
+# x_only = (grid[:, 1] == 0) & (grid[:, 2] == 0)
+# rhoR = rhoR[x_only]
+# grid = grid[x_only]
+#
+# # rhok_G0 = rhoG[:,0]
+# print('Saving data for rho(q)')
+# print(rhok)
+# ng = 1
+# for ig in range(ng):
+#     print('G index', ig)
+#     rhok_G = rhoG[:, ig]
+#     print(rhok_G)
