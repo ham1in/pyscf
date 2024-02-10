@@ -1487,33 +1487,35 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
     Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
     GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
 
-    rhokqmnG = np.zeros((nkpts, nkpts, nbands, nbands, nG), dtype=complex)
-    for k in range(nkpts):
-        for q in range(nkpts):
+    SqG = np.zeros((nkpts, nG), dtype=np.float64)
+    print("MEM USAGE IS:", SqG.nbytes)
+    for q in range(nkpts):
+        for k in range(nkpts):
+            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+
             kpt1 = kGrid[k, :]
             qpt = qGrid[q, :]
             kpt2 = kpt1 + qpt
 
-            #   locate uk with k = kpt2
             kpt2_BZ = minimum_image(kmf.cell, kpt2)
             idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
             if len(idx_kpt2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
-            else:
-                idx_kpt2 = idx_kpt2[0]
+            idx_kpt2 = idx_kpt2[0]
             kGdiff = kpt2 - kpt2_BZ
 
-            #   compute rho_{nk1, m(k1+q)}(G)}
             for n in range(nbands):
                 for m in range(nbands):
                     u1 = uKpts[k, n, :]
                     u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
                     temp_fft = np.fft.fftn((rho12 * dvol))
-                    rhokqmnG[k, q, n, m, :] = temp_fft.reshape(-1)
+                    # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
+                    temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
-    #   Step 2: Construct the structure factor
-    SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
+            SqG[q, :] += temp_SqG_k / nkpts
+
+    #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
     SqG = SqG - nocc  # remove the zero order approximate nocc
     assert (np.abs(SqG[0, 0]) < 1e-4)
 
