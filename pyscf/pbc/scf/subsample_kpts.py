@@ -4,7 +4,7 @@ from pyscf.pbc.tools import pbc as pbc_tools
 from pyscf.lib import logger
 import copy
 
-def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type = None):
+def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type = None, exxdiv = 'ewald'):
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell,kpts = mf.kpts)
     nk = np.prod(nks)
     assert(nk % (np.prod(div_vector)**dim) == 0, "Div vector must divide nk")
@@ -17,6 +17,7 @@ def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type 
     print('Initial sanity run. Sampling ', nk, 'k-points',file=f)
     if dm is None:
         dm = mf.make_rdm1()
+    mf.exxdiv = exxdiv
     J, K = mf.get_jk(cell = mf.cell, dm_kpts = dm, kpts = mf.kpts, kpts_band = mf.kpts, with_j = True)
 
     Ek = -1. / nk * np.einsum('kij,kji', dm, K) * 0.5
