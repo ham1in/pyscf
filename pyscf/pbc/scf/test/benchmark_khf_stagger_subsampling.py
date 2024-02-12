@@ -104,7 +104,7 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     return cell, kpts
 nkx = 4
 kmesh = [nkx, nkx, 1]
-cell, kpts= build_bn_monolayer_cell(nk=kmesh,kecut=200)
+cell, kpts= build_bn_monolayer_cell(nk=kmesh,kecut=56)
 
 cell.lowdim_ft_type = 'analytic_2d_1'
 cell.dimension = 2
@@ -114,7 +114,7 @@ cell.build()
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
-df_type = df.GDF
+df_type = df.FFTDF
 mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
