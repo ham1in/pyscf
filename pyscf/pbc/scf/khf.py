@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
+def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -877,7 +877,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         return ecell
 
     #Function for Madelung constant calculation following formula in Stephen's paper
-    def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None):
+    def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None, dm_kpts = None):
         #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
         nk = get_monkhorst_pack_size(icell, ikpts)
@@ -957,7 +957,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
             return ewg - ewg_analytical
 
 
-    if df_type == None:
+    if df_type is None:
         if icell.dimension <=2:
             df_type = df.GDF
         else:
@@ -1059,11 +1059,16 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         E_stagger_M = E_stagger + nocc * conv_Madelung
 
         print("Two Shot")
-    else:
+    else: # Non-SCF
         mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
-        mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
+        mf2.with_df = df_type(icell, ikpts).build()
+        if dm_kpts is None:
+            print(mf2.kernel())
+            # Get converged density matrix
+            dm_un = mf2.make_rdm1()
+        else:
+            dm_un = dm_kpts
 
-        print(mf2.kernel())
         #Defining size and making shifted mesh
         nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
         shift = mf2.cell.get_abs_kpts([0.5/n for n in nk])
@@ -1074,10 +1079,13 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         shifted_mesh = mf2.kpts + shift
         print(mf2.kpts)
         print(shifted_mesh)
-        # Get converged density matrix
-        dm_un = mf2.make_rdm1()
+
         print("\n")
-        print("Converged Density Matrix")
+        if dm_kpts is None:
+            print("Converged Density Matrix")
+        else:
+            print("Input density matrix")
+
         for i in range(0,dm_un.shape[0]):
             print("kpt: " + str(mf2.kpts[i]) + "\n")
             mat = dm_un[i,:,:]
@@ -1091,8 +1099,12 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
         F_shift = h1e + Veff
         s1e = get_ovlp(mf2, cell = mf2.cell, kpts = shifted_mesh)
+
+        # F_shift = get_fock(dm = dm)
+
         mo_energy, mo_coeff = mf2.eig(F_shift, s1e)
-        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff)
+        mo_occ = mf2.get_occ(mo_energy_kpts=mo_energy, mo_coeff_kpts=mo_coeff)
+        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff,mo_occ_kpts = mo_occ)
         #Computing the Staggered mesh energy
         Nk = np.prod(nk)
         E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
