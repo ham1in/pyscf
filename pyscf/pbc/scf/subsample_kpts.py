@@ -4,7 +4,7 @@ from pyscf.pbc.tools import pbc as pbc_tools
 from pyscf.lib import logger
 import copy
 
-def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type = None, exxdiv = 'ewald'):
+def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None, singularity_subtraction=False, exxdiv ='ewald'):
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell,kpts = mf.kpts)
     nk = np.prod(nks)
     assert(nk % (np.prod(div_vector)**dim) == 0, "Div vector must divide nk")
@@ -14,16 +14,19 @@ def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type 
         f = open(mf.cell.output, "a")
     else:
         f = None
-    print('Initial sanity run. Sampling ', nk, 'k-points',file=f)
-    if dm is None:
-        dm = mf.make_rdm1()
-    mf.exxdiv = exxdiv
-    J, K = mf.get_jk(cell = mf.cell, dm_kpts = dm, kpts = mf.kpts, kpts_band = mf.kpts, with_j = True)
+    print('Recomputing jk', file=f)
+    print('Sampling ', nk, 'k-points',file=f)
+    mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
 
-    Ek = -1. / nk * np.einsum('kij,kji', dm, K) * 0.5
+    if dm_kpts is None:
+        dm_kpts = mf.make_rdm1()
+    mf.exxdiv = exxdiv
+    J, K = mf.get_jk(cell = mf.cell, dm_kpts = dm_kpts, kpts = mf.kpts, kpts_band = mf.kpts, with_j = True)
+
+    Ek = -1. / nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
     Ek /= 2.
 
-    Ej = 1. / nk * np.einsum('kij,kji', dm, J)
+    Ej = 1. / nk * np.einsum('kij,kji', dm_kpts, J)
     Ej /= 2.
 
     kpts_div_old = mf.cell.make_kpts(nks, wrap_around=True)
@@ -31,23 +34,32 @@ def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type 
     print('Ej (a.u.) = ', Ej, file=f)
     print('Ek (a.u.) = ', Ek, file=f)
 
-    Ek_list = [Ek.real]
-    Ej_list = [Ej.real]
+    Ek_list = []
+    Ej_list = []
 
-    nk_list = [nk]
-    nks_list = [copy.copy(nks)]
+    nk_list = []
+    nks_list = []
 
     if stagger_type is not None:
         print('Warning, no J term computed', file=f)
 
-    for div in div_vector:
-
-        for i in range(dim):
-            nks[i] = nks[i]/div
+    # for div in div_vector:
+    for j in range(-1,len(div_vector)):
+        if j == -1:
+            div = 1
+            for i in range(dim):
+                nks[i] = nks[i] / div
+            nk_div = np.prod(nks)
+            print('Initial Sanity run. Dividing by ', div ** dim, ', subsampling ', nk_div, 'k-points', file=f)
+        else:
+            div = div_vector[j]
+            for i in range(dim):
+                nks[i] = nks[i] / div
+            nk_div = np.prod(nks)
+            print('Dividing by ', div ** dim, ', subsampling ', nk_div, 'k-points', file=f)
 
         kpts_div = mf.cell.make_kpts(nks, wrap_around=True)
-        nk_div = np.prod(nks)
-        print('Dividing by ', div**dim, ', subsampling ',nk_div , 'k-points', file=f)
+
         subsample_indices = []
         for ik in range(nk_div):
             diff_mat = kpts_div_old - kpts_div[ik]
@@ -59,16 +71,44 @@ def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type 
             subsample_indices.append(diff0)
 
 
-        dm = dm[subsample_indices]
-        if stagger_type == None:
+        dm_kpts = dm_kpts[subsample_indices]
+        mo_coeff_kpts = mo_coeff_kpts[subsample_indices]
 
-            J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
+        if singularity_subtraction:
+            from pyscf.pbc.scf.khf import make_ss_inputs, khf_2d
+            mf.kpts = kpts_div
+            mf.exxdiv = None #so that standard energy is computed without madelung
+            E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
+                                                           mo_coeff_kpts=mo_coeff_kpts)
+            e_ss = khf_2d(mf, nks, uKpts, E_madelung, N_local=15,localizer_degree=6)
+            print('Ek (standard) (a.u.) = ', E_madelung, file=f)
+            print('Ek (SS) (a.u.) = ', e_ss, file=f)
+
+            Ek_list.append(e_ss)
+            nk_list.append(nk_div)
+            nks_list.append(copy.copy(nks))
+        elif stagger_type !=None:
+            from pyscf.pbc.scf.khf import khf_stagger
+
+            Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type, df_type=df_type, dm_kpts=dm_kpts)
 
 
-            Ek = -1. / nk_div * np.einsum('kij,kji', dm, K) * 0.5
+
+            kpts_div_old = kpts_div
+
+
+            print('Ek (a.u.) = ', Ek_stagger_M, file=f)
+            Ek_list.append(Ek_stagger_M)
+            nk_list.append(nk_div)
+            nks_list.append(copy.copy(nks))
+
+        else:
+
+            J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
+            Ek = -1. / nk_div * np.einsum('kij,kji', dm_kpts, K) * 0.5
             Ek /= 2.
 
-            Ej = 1. / nk_div * np.einsum('kij,kji', dm, J)
+            Ej = 1. / nk_div * np.einsum('kij,kji', dm_kpts, J)
             Ej /= 2.
 
             kpts_div_old  = kpts_div
@@ -82,30 +122,8 @@ def subsample_kpts(mf, dim, div_vector, dm = None, stagger_type = None, df_type 
             Ek_list.append(Ek)
             nk_list.append(nk_div)
             nks_list.append(copy.copy(nks))
-        else:
 
-            from pyscf.pbc.scf.khf import khf_stagger
-            from pyscf.pbc import df
-            # J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
-            Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type, df_type=df_type,dm_kpts=dm)
 
-            # Ek = -1. / nk_div * np.einsum('kij,kji', dm, K) * 0.5
-            # Ek /= 2.
-            #
-            # Ej = 1. / nk_div * np.einsum('kij,kji', dm, J)
-            # Ej /= 2.
-
-            kpts_div_old = kpts_div
-            #
-            # Ek = Ek.real
-            # Ej = Ej.real
-
-            # print('Ej (a.u.) = ', Ej, file=f)
-            print('Ek (a.u.) = ', Ek_stagger_M, file=f)
-            # Ej_list.append(Ej)
-            Ek_list.append(Ek_stagger_M)
-            nk_list.append(nk_div)
-            nks_list.append(copy.copy(nks))
 
 
 

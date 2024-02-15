@@ -1627,7 +1627,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5):
+def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1735,7 +1735,7 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5):
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    H = lambda q: poly_localizer(q, r1, 6)
+    H = lambda q: poly_localizer(q, r1, localizer_degree)
 
     #   reciprocal lattice within the local domain
     #   Needs modification for 2D
@@ -1821,6 +1821,46 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5):
     # e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
 
     return e_ex_ss
+def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
+    from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
+
+    Madelung = madelung(kmf.cell, kpts)
+    nocc = kmf.cell.tot_electrons() // 2
+    nk = get_monkhorst_pack_size(kmf.cell, kpts)
+    Nk = np.prod(nk)
+    # dm_kpts = kmf.make_rdm1() ## make input
+    _, K = kmf.get_jk(cell=kmf.cell, dm_kpts=dm_kpts, kpts=kpts, kpts_band=kpts)
+    E_standard = -1. / Nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
+    E_standard /= 2
+    E_madelung = E_standard - nocc * Madelung
+    print(E_madelung)
+
+    # Saving the wavefunction data (Strange MKL error just feeding mo_coeff...)
+    # mo_coeff_kpts = kmf.mo_coeff_kpts # make input as well
+    Lvec_real = kmf.cell.lattice_vectors()
+    NsCell = kmf.cell.mesh
+    L_delta = Lvec_real / NsCell[:, None]
+    dvol = np.abs(np.linalg.det(L_delta))
+    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+    rptGrid3D = mesh_idx @ L_delta
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
+
+    qGrid = minimum_image(kmf.cell, kpts - kpts[0, :])
+    kGrid = minimum_image(kmf.cell, kpts)
+
+    nbands = nocc
+    nG = np.prod(NsCell)
+    uKpts = np.zeros((Nk, nbands, nG), dtype=complex)
+    for k in range(Nk):
+        for n in range(nbands):
+            utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
+            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
+            uKpts[k, n, :] = np.squeeze(exp_part * utmp)
+    return E_standard, E_madelung, uKpts
+
+
+
 def khf_ss_2d_matlab(kmf, nks, uKpts, made, N_local = 5,load_from_mat=True):
     from scipy.special import sici
     from scipy.special import iv

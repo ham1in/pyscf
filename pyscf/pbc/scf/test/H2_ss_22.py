@@ -31,7 +31,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100):
     kpts = cell.make_kpts(nk, wrap_around=False)
     return cell, kpts
 
-nks = [2,2,1]
+nks = [3,3,1]
 H2, kpts = build_H2_cell(nks)
 kmf = scf.KRHF(H2, kpts)
 
@@ -39,7 +39,7 @@ import pickle
 with open('H2_HF_33_vac24.pkl','rb') as file:
      data = pickle.load(file)
 
-e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 9)
+e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 3)
 
 print("Regular energy")
 print(data["e_ex_m"])
