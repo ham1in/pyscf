@@ -13,9 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Authors: Garnet Chan <gkc1000@gmail.com>
-#          Qiming Sun <osirpt.sun@gmail.com>
-#
+# Authors: Stephen Quiton <stephen.quiton@berkeley.edu>
+
 
 
 import unittest
@@ -24,6 +23,7 @@ import numpy as np
 
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
+from pyscf.pbc.scf.subsample_kpts import subsample_kpts
 from pyscf.pbc import df
 from pyscf import lib
 import os
@@ -73,22 +73,12 @@ def build_carbon_chain_cell(nk=(1, 1, 1), kecut=100, bla_angstrom=0.128, a_angst
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
 
-# L = 4
-# cell = pbcgto.Cell()
-# A = np.eye(3) * 4,
-#
-# A = np.array([[4,0,0],
-#               [0,4,0],
-#               [0,0,4]])
-
 
 nkx = 8
 kmesh = [nkx, 1, 1]
 cell, kpts= build_carbon_chain_cell(nk=kmesh,kecut=56,bla_angstrom=0.125)
 
-# f = open(cell.output, "a")
-# f.write("Full kpoint test\n")
-# f.write('testing mean method\n')
+
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
@@ -105,9 +95,7 @@ h1e = mf.get_hcore()
 ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm).real
 
 Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
-np.save('carbyne-Jo'+ str(nkx) + '.npy', Jo)
-np.save('carbyne-Ko'+ str(nkx) + '.npy', Ko)
-np.save('carbyne-h1e'+ str(nkx) + '.npy', h1e)
+
 
 
 Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm) * 0.5
@@ -118,8 +106,6 @@ Ek = Ek.real
 Ej /= 2.
 Ej = Ej.real
 
-
-
 print('Ek (a.u.) is ', Ek)
 print('Ej (a.u.) is ', Ej)
 print('Ehcore (a.u.) is ', ehcore)
@@ -127,65 +113,15 @@ print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
 # Subsample 8 kpts
-print(f'\nSubsampling to  ',Nk/2 ,' kpoints')
+div_vector = [2,2,2]
+nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=1,div_vector=div_vector)
+print('=== Kpoint Subsampling Results === ')
 
-Ko_div1 = Ko[0::2]
-Jo_div1 = Jo[0::2]
-dm_div1 = dm[0::2]
-h1e_div1 = h1e[0::2]
-
-Nk /= 2
-
-ehcore = 1. / Nk * np.einsum('kij,kji->', h1e_div1, dm_div1).real
-Ek = -1. / Nk * np.einsum('kij,kji', Ko_div1, dm_div1) * 0.5
-Ej = 1. / Nk * np.einsum('kij,kji', Jo_div1, dm_div1)
-Ek /= 2.
-Ek = Ek.real
-Ej /= 2.
-Ej = Ej.real
-
-print('Ek (a.u.) is ', Ek)
-print('Ej (a.u.) is ', Ej)
-print('Ehcore (a.u.) is ', ehcore)
-print('Enuc (a.u.) is ', mf.energy_nuc().real)
-print('Ecoul (a.u.) is ', Ek + Ej)
-
-
-# Subsample 4 kpts
-print(f'\nSubsampling to  ',Nk/2 ,' kpoints')
-
-Ko_div2 = Ko_div1[0::2]
-Jo_div2 = Jo_div1[0::2]
-dm_div2 = dm_div1[0::2]
-h1e_div2 = h1e_div1[0::2]
-
-Nk /= 2
-
-ehcore = 1. / Nk * np.einsum('kij,kji->', h1e_div2, dm_div2).real
-Ek = -1. / Nk * np.einsum('kij,kji', Ko_div2, dm_div2) * 0.5
-Ej = 1. / Nk * np.einsum('kij,kji', Jo_div2, dm_div2)
-Ek /= 2.
-Ek = Ek.real
-Ej /= 2.
-Ej = Ej.real
-
-print('Ek (a.u.) is ', Ek)
-print('Ej (a.u.) is ', Ej)
-print('Ehcore (a.u.) is ', ehcore)
-print('Enuc (a.u.) is ', mf.energy_nuc().real)
-print('Ecoul (a.u.) is ', Ek + Ej)
-
-
-
-# J_no_coulG = mf.with_df.get_electron_density(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)
-# electron_density_l2 = 1. / Nk * np.einsum('kij,kji', J_no_coulG, dm_un)
-# print('electron_density_l2 (a.u.) is ', electron_density_l2.real)
-#
-# print('Saving data for rho(q)')
-#
-# kpts_wrap = cell.make_kpts(nks=kmesh, wrap=True)
-# np.save('h2-kpts-nkx' + str(nkx) + '.npy', kpts_wrap)
-# ig = 0
-# rhoG0 = mf.with_df.get_rhoG(dm_kpts=dm_un, kpts=mf.kpts, kpts_band=mf.kpts)[:, ig]
-#
-# np.save('h2-rhoG0-nkx' + str(nkx) + '.npy', rhoG0)
+print('\nnk list')
+print(nk_list)
+print('\nnks list')
+print(nks_list)
+print('\nEj list')
+print(Ej_list)
+print('\nEk list')
+print(Ek_list)
