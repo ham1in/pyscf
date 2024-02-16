@@ -1547,7 +1547,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     #   reciprocal lattice within the local domain
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
+    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0], indexing='ij')
     GptGrid3D_local = np.hstack(
         (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
 
