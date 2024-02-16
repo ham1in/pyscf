@@ -1686,35 +1686,45 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5):
 
     vac_size_bz = np.linalg.norm(Lvec_recip[non_per_dim])
 
-    rhokqmnG = np.zeros((nkpts, nkpts, nbands, nbands, nG), dtype=complex)
-    for k in range(nkpts):
-        for q in range(nkpts):
+    SqG = np.zeros((nkpts, nG), dtype=np.float64)
+    print("MEM USAGE IS:", SqG.nbytes)
+    for q in range(nkpts):
+        for k in range(nkpts):
+            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+
             kpt1 = kGrid[k, :]
             qpt = qGrid[q, :]
             kpt2 = kpt1 + qpt
 
-            #   locate uk with k = kpt2
             kpt2_BZ = minimum_image(kmf.cell, kpt2)
             idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
             if len(idx_kpt2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
-            else:
-                idx_kpt2 = idx_kpt2[0]
+            idx_kpt2 = idx_kpt2[0]
             kGdiff = kpt2 - kpt2_BZ
 
-            #   compute rho_{nk1, m(k1+q)}(G)}
             for n in range(nbands):
                 for m in range(nbands):
                     u1 = uKpts[k, n, :]
                     u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
                     temp_fft = np.fft.fftn((rho12 * dvol))
-                    rhokqmnG[k, q, n, m, :] = temp_fft.reshape(-1)
+                    # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
+                    temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
-    #   Step 2: Construct the structure factor
-    SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
+            SqG[q, :] += temp_SqG_k / nkpts
+
+    # SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
     SqG = SqG - nocc  # remove the zero order approximate nocc
     assert (np.abs(SqG[0, 0]) < 1e-4)
+
+    #Attach pre-factor immediately
+    vol_Bz = abs(np.linalg.det(Lvec_recip))
+    area_Bz = np.linalg.norm(np.cross(Lvec_recip[0], Lvec_recip[1]))
+    SqG = SqG * -1/(8*np.pi**3 * vol_Bz)
+    SqG = SqG * area_Bz / nkpts
+
+    int_prefactor = vol_Bz**2/ area_Bz
 
     #   Step 3.1: define the local domain as multiple of BZ
     LsCell_bz_local = N_local * Lvec_recip
@@ -1790,9 +1800,8 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5):
         tmp = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction += np.real(np.sum(tmp))/nkpts
 
-    bz_dvol = np.abs(np.linalg.det(Lvec_recip))
     #ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
-    ss_correction = 4 * np.pi * ss_correction * 1/(8* np.pi**3) * bz_dvol/np.linalg.norm(Lvec_recip[2])
+    ss_correction = 4 * np.pi * ss_correction * int_prefactor
 
     #   Step 5: apply the correction
     e_ex_ss = made + ss_correction
