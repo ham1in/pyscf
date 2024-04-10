@@ -100,6 +100,9 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell.max_memory = 1000
     cell.precision = 1e-8
 
+    cell.lowdim_ft_type = 'analytic_2d_1'
+    cell.dimension = 2
+
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
 nkx = 4

@@ -4,7 +4,7 @@ from pyscf.pbc.tools import pbc as pbc_tools
 from pyscf.lib import logger
 import copy
 
-def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None, singularity_subtraction=False, exxdiv ='ewald'):
+def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None, singularity_subtraction=False, exxdiv ='ewald',wrap_around=False):
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell,kpts = mf.kpts)
     nk = np.prod(nks)
     assert(nk % (np.prod(div_vector)**dim) == 0, "Div vector must divide nk")
@@ -29,7 +29,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
     Ej = 1. / nk * np.einsum('kij,kji', dm_kpts, J)
     Ej /= 2.
 
-    kpts_div_old = mf.cell.make_kpts(nks, wrap_around=True)
+    kpts_div_old = mf.cell.make_kpts(nks, wrap_around=wrap_around)
 
     print('Ej (a.u.) = ', Ej, file=f)
     print('Ek (a.u.) = ', Ek, file=f)
@@ -58,7 +58,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             nk_div = np.prod(nks)
             print('Dividing by ', div ** dim, ', subsampling ', nk_div, 'k-points', file=f)
 
-        kpts_div = mf.cell.make_kpts(nks, wrap_around=True)
+        kpts_div = mf.cell.make_kpts(nks, wrap_around=wrap_around)
 
         subsample_indices = []
         for ik in range(nk_div):
@@ -80,7 +80,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             mf.exxdiv = None #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
-            e_ss = khf_2d(mf, nks, uKpts, E_madelung, N_local=15,localizer_degree=6)
+            e_ss = khf_2d(mf, nks, uKpts, E_madelung, N_local=7,localizer_degree=4,debug=True)
             print('Ek (standard) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
@@ -94,7 +94,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
 
 
 
-            kpts_div_old = kpts_div
+
 
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
@@ -111,7 +111,6 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             Ej = 1. / nk_div * np.einsum('kij,kji', dm_kpts, J)
             Ej /= 2.
 
-            kpts_div_old  = kpts_div
 
             Ek = Ek.real
             Ej = Ej.real
@@ -123,7 +122,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             nk_list.append(nk_div)
             nks_list.append(copy.copy(nks))
 
-
+        kpts_div_old = kpts_div
 
 
 

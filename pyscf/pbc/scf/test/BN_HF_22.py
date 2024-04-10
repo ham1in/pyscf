@@ -3,7 +3,7 @@ from pyscf.pbc import gto, scf, df, dft
 from pyscf.pbc.scf.khf import make_ss_inputs
 import numpy as np
 
-KPT_NUM = [2, 2, 1]
+KPT_NUM = [4, 4, 1]
 
 
 def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
@@ -30,6 +30,8 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell.ke_cutoff = kecut
     cell.max_memory = 1000
     cell.precision = 1e-8
+    cell.dimension = 2
+    cell.low_dim_ft_type = 'analytic_2d_1'
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts

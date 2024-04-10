@@ -27,11 +27,13 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell.ke_cutoff = kecut
     cell.max_memory = 1000
     cell.precision = 1e-8
+    cell.dimension = 2
+    cell.low_dim_ft_type = 'analytic_2d_1'
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
 
-nks = [2,2,1]
+nks = [4,4,1]
 H2, kpts = build_bn_monolayer_cell(nks)
 kmf = scf.KRHF(H2, kpts)
 
@@ -40,7 +42,7 @@ filename = 'BN_HF_' + str(nks[0]) + str(nks[1])  +'.pkl'
 with open(filename,'rb') as file:
      data = pickle.load(file)
 
-e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 9)
+e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 9,debug=True)
 
 print("Regular energy")
 print(data["e_ex_m"])

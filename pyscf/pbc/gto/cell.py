@@ -749,7 +749,7 @@ def get_ewald_params(cell, precision=None, mesh=None):
         ew_cut = _estimate_rcut(ew_eta**2, 0, 1., precision)
     return ew_eta, ew_cut
 
-def ewald(cell, ew_eta=None, ew_cut=None):
+def ewald(cell, ew_eta=None, ew_cut=None, ss_terms=False):
     '''Perform real (R) and reciprocal (G) space Ewald sum for the energy.
 
     Formulation of Martin, App. F2.
@@ -855,6 +855,8 @@ def ewald(cell, ew_eta=None, ew_cut=None):
         raise NotImplementedError
 
     logger.debug(cell, 'Ewald components = %.15g, %.15g, %.15g', ewovrl, ewself, ewg)
+    if ss_terms:
+        ewovrl = 0
     return ewovrl + ewself + ewg
 
 energy_nuc = ewald

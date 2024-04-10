@@ -29,7 +29,7 @@ from pyscf import lib
 import os
 
 cwd = os.getcwd()
-nthreads = 16
+nthreads = 24
 os.environ['OMP_NUM_THREADS'] = str(nthreads)
 os.environ['MKL_NUM_THREADS'] = str(nthreads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(nthreads)
@@ -69,17 +69,54 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell.ke_cutoff = kecut
     cell.max_memory = 1000
     cell.precision = 1e-8
+    cell.lowdim_ft_type = 'analytic_2d_1'
+    cell.dimension = 2
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
 
+def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
+    cell = pbcgto.Cell()
+    cell.atom='''
+        H 3.00   3.00   2.10
+        H 3.00   3.00   3.90
+        '''
+    cell.a = '''
+        6.0   0.0   0.0
+        0.0   6.0   0.0
+        0.0   0.0   24.0
+        '''
+    # cell.atom='''
+    #     H 1.50   1.50   2.10
+    #     H 1.50   1.50   3.90
+    #     '''
+    # cell.a = '''
+    #     3.0   0.0   0.0
+    #     0.0   3.0   0.0
+    #     0.0   0.0   24.0
+    #     '''
+    cell.unit = 'B'
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = {'H':'gth-szv'}
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    cell.dimension = 2
+    cell.lowdim_ft_type = 'analytic_2d_1'
+    cell.ke_cutoff = kecut
+    cell.max_memory = 5000
+    cell.build()
+    cell.omega = 0
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
+    return cell, kpts
 
 
-
-
+wrap_around = False
 nkx = 4
 kmesh = [nkx, nkx, 1]
-cell, kpts= build_bn_monolayer_cell(nk=kmesh,kecut=56)
+cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 
 cell.lowdim_ft_type = 'analytic_2d_1'
 cell.dimension = 2
@@ -89,7 +126,7 @@ cell.build()
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
-df_type = df.FFTDF
+df_type = df.GDF
 mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
@@ -136,7 +173,7 @@ div_vector = [2,2]
 
 
 
-nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True)
+nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True,wrap_around=wrap_around)
 
 
 print('=== Kpoint Subsampling Results (SS) === ')

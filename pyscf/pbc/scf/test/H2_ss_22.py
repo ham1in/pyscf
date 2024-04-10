@@ -2,6 +2,7 @@ from pyscf import lib
 from pyscf import pbc as pbc
 from pyscf.pbc import gto, scf, df, dft
 from pyscf.pbc.scf.khf import khf_2d
+from pyscf.pbc.tools import madelung
 
 def build_H2_cell(nk = (1,1,1),kecut=100):
     cell = pbc.gto.Cell()
@@ -28,18 +29,19 @@ def build_H2_cell(nk = (1,1,1),kecut=100):
     cell.max_memory = 5000
     cell.build()
     cell.omega = 0
-    kpts = cell.make_kpts(nk, wrap_around=False)
+    kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
 
-nks = [3,3,1]
+nks = [2,2,1]
 H2, kpts = build_H2_cell(nks)
 kmf = scf.KRHF(H2, kpts)
+Madelung =  madelung(H2,kpts,ss_terms=False)
 
 import pickle
-with open('H2_HF_33_vac24.pkl','rb') as file:
+with open('H2_HF_22_vac24.pkl','rb') as file:
      data = pickle.load(file)
 
-e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 3)
+e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 9,debug=True,localizer_degree=4)
 
 print("Regular energy")
 print(data["e_ex_m"])

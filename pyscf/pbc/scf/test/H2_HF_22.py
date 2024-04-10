@@ -3,6 +3,8 @@ from pyscf import pbc as pbc
 from pyscf.pbc import gto, scf, df, dft
 from pyscf.pbc.tools import madelung
 from pyscf.pbc.tools import get_monkhorst_pack_size
+from pyscf.pbc.tools import cutoff_to_mesh
+
 from pyscf.pbc.scf.khf import minimum_image
 import numpy as np
 
@@ -35,14 +37,15 @@ def build_H2_cell(nk = (1,1,1),kecut=100):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=False)    
     return cell, kpts
-    
-H2, kpts = build_H2_cell(KPT_NUM)
+
+kecut = 100
+H2, kpts = build_H2_cell(KPT_NUM,kecut=kecut)
 
 #Energy calculation
-kmf = scf.KRHF(H2, kpts)
+kmf = scf.KRHF(H2, kpts=kpts)
 kmf.exxdiv = None
 kmf.kernel()
-Madelung =  madelung(H2,kpts)
+Madelung =  madelung(H2,kpts,ss_terms=False)
 nocc = kmf.cell.tot_electrons()//2
 nk = get_monkhorst_pack_size(kmf.cell, kmf.kpts)
 Nk = np.prod(nk)
@@ -81,13 +84,24 @@ import pickle
 import os
 full_path = os.path.realpath(__file__)
 filename = os.path.basename(full_path)[:-3]
-filename = "H2_HF_33" #changeme
+filename = "H2_HF_22" #changeme
 filename = filename + "_vac24"
 data = {
-     "e_ex":E_standard,
-     "e_ex_m":E_madelung,
-     "uKpts":uKpts
+    "e_ex":E_standard,
+    "e_ex_m":E_madelung,
+    "uKpts":uKpts,
+    "kpts":kpts,
+    "NsCell":NsCell,
+    "rptGrid3D":H2.get_uniform_grids(mesh=NsCell,wrap_around=True),
+    "GptGrid_UnitCell":H2.get_Gv(mesh=NsCell,wrap_around=True)
+
        }
-with open(filename + ".pkl", 'wb') as file:
-     pickle.dump(data,file)
+pkl = False
+if pkl:
+    with open(filename + ".pkl", 'wb') as file:
+         pickle.dump(data,file)
+else:
+    import scipy.io
+    scipy.io.savemat(filename+".mat",data)
+
 
