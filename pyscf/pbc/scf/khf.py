@@ -1624,7 +1624,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5,localizer_degree=4,debug = False):
+def khf_2d(kmf, nks, uKpts, ex, N_local = 5,localizer_degree=4,debug = False):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1743,7 +1743,7 @@ def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5,localizer_degree=4,d
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    H = lambda q: poly_localizer(q, r1, 4)
+    H = lambda q: poly_localizer(q, r1, d=localizer_degree)
 
     #   reciprocal lattice within the local domain
     #   Needs modification for 2D
@@ -1859,7 +1859,6 @@ def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5,localizer_degree=4,d
     return e_ex_ss
 def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
-
     Madelung = madelung(kmf.cell, kpts)
     nocc = kmf.cell.tot_electrons() // 2
     nk = get_monkhorst_pack_size(kmf.cell, kpts)

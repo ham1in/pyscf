@@ -20,7 +20,6 @@
 import unittest
 import tempfile
 import numpy as np
-
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
 from pyscf.pbc.scf.subsample_kpts import subsample_kpts
@@ -113,7 +112,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     return cell, kpts
 
 
-wrap_around = False
+wrap_around = True
 nkx = 4
 kmesh = [nkx, nkx, 1]
 cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
@@ -159,25 +158,10 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 
 
 div_vector = [2,2]
-
-# nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type)
-#
-# print('=== Kpoint Subsampling Results === ')
-#
-# print('\nnk list')
-# print(nk_list)
-# print('\nnks list')
-# print(nks_list)
-# print('\nEk list')
-# print(Ek_list)
-
-
-
 nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True,wrap_around=wrap_around)
 
 
 print('=== Kpoint Subsampling Results (SS) === ')
-
 print('\nnk list')
 print(nk_list)
 print('\nnks list')
