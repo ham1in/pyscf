@@ -5,6 +5,25 @@ from pyscf.lib import logger
 import copy
 
 def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None, singularity_subtraction=False, exxdiv ='ewald',wrap_around=False):
+    """
+
+    Args:
+        mf: mean-field object
+        dim: Dimension of kpoint subsampling routine
+        div_vector: Array of integers to consecutively divide nk along 1 dimension. e.g. you can do [2,2,3] for nk_1d=24
+        dm_kpts: Density matrix from mf.kernel
+        stagger_type: Use subsampling with this version of staggered mesh
+        df_type: Density fitting type (df.GDF, df.FFTDF, etc.)
+        singularity_subtraction: Set to true to do subsampling with singularity subtraction
+        exxdiv: Procedure for handling exchange divergence
+        wrap_around: Set to true to keep kpoints within FBZ
+
+    Returns:
+        nk_list: Array of total nk for each subsampling iteration
+        nks_list: Array of nk split into their dimensions
+        Ej_list: Hartree term for each subsampling iteration
+        Ek_list: Exchange term for each subsampling iteration
+    """
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell,kpts = mf.kpts)
     nk = np.prod(nks)
     assert(nk % (np.prod(div_vector)**dim) == 0, "Div vector must divide nk")
@@ -91,11 +110,6 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             from pyscf.pbc.scf.khf import khf_stagger
 
             Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type, df_type=df_type, dm_kpts=dm_kpts)
-
-
-
-
-
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             Ek_list.append(Ek_stagger_M)
