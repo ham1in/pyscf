@@ -1099,9 +1099,6 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
         Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
         F_shift = h1e + Veff
         s1e = get_ovlp(mf2, cell = mf2.cell, kpts = shifted_mesh)
-
-        # F_shift = get_fock(dm = dm)
-
         mo_energy, mo_coeff = mf2.eig(F_shift, s1e)
         mo_occ = mf2.get_occ(mo_energy_kpts=mo_energy, mo_coeff_kpts=mo_coeff)
         dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff,mo_occ_kpts = mo_occ)
@@ -1559,7 +1556,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     #   reciprocal lattice within the local domain
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
+    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0], indexing='ij')
     GptGrid3D_local = np.hstack(
         (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
 
@@ -1586,7 +1583,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
     Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
     RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
 
-    #   Kernel from Fourier Interpolation
+      #   Kernel from Fourier Interpolation
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
     CoulR[normR < 1e-8] = 4 * np.pi * r1
@@ -1627,7 +1624,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4,debug = False):
+def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5,localizer_degree=4,debug = False):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1649,7 +1646,7 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4
 
     def poly_localizer(x, r1, d):
         x = np.asarray(x)
-        x = x / r1
+        x = x[:, :2] / r1
         r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
         val = (1 - r ** d) ** d
         if x.ndim > 1:
@@ -1678,12 +1675,7 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4
     kGrid = minimum_image(cell, kpts)
 
     #Extract vacuum size information
-    non_per_dim = np.where(nks == 1)
-    if len(non_per_dim) >1:
-        raise TypeError("More than one non-periodic direction found.")
-    non_per_dim = non_per_dim[0]
-    vac_size = np.linalg.norm(Lvec_real[non_per_dim])
-
+    vac_size = np.linalg.norm(Lvec_real[2])
     nbands = nocc
     nG = np.prod(NsCell)
 
@@ -1697,55 +1689,61 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4
     GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
 
 
-    # Gvbase= (Gx, Gy, Gz)
-    # Gv = np.dot(lib.cartesian_prod(Gvbase), Lvec_recip)
-    # GptGrid3D =Gv
-    # print(max(abs(Gv-GptGrid3D)))
-    vac_size_bz = np.linalg.norm(Lvec_recip[non_per_dim])
+    #Pick out unique Gz in L^*
+    z_tmp = GptGrid3D[:,2]
+    z_coords = np.unique(z_tmp)
+    z_size = len(z_coords)
+    z_coord_arr = np.zeros((z_size,3))
+    z_coord_arr[:,2] = z_coords
 
-    rhokqmnG = np.zeros((nkpts, nkpts, nbands, nbands, nG), dtype=complex)
-    for k in range(nkpts):
-        for q in range(nkpts):
+    vac_size_bz = np.linalg.norm(Lvec_recip[2])
+
+    SqG = np.zeros((nkpts, nG), dtype=np.float64)
+    print("MEM USAGE IS:", SqG.nbytes)
+    for q in range(nkpts):
+        for k in range(nkpts):
+            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+
             kpt1 = kGrid[k, :]
             qpt = qGrid[q, :]
             kpt2 = kpt1 + qpt
 
-            #   locate uk with k = kpt2
             kpt2_BZ = minimum_image(kmf.cell, kpt2)
             idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
             if len(idx_kpt2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
-            else:
-                idx_kpt2 = idx_kpt2[0]
+            idx_kpt2 = idx_kpt2[0]
             kGdiff = kpt2 - kpt2_BZ
 
-            #   compute rho_{nk1, m(k1+q)}(G)}
             for n in range(nbands):
                 for m in range(nbands):
                     u1 = uKpts[k, n, :]
                     u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
                     temp_fft = np.fft.fftn((rho12 * dvol))
-                    rhokqmnG[k, q, n, m, :] = temp_fft.reshape(-1)
+                    # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
+                    temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
-    #   Step 2: Construct the structure factor
-    SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-    SqG = SqG - nocc  # remove the zero order approximate nocc
-    # assert (np.abs(SqG[0, 0]) < 1e-4)
+            SqG[q, :] += temp_SqG_k / nkpts
+
+    # SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
+    #SqG = SqG - nocc  # remove the zero order approximate nocc (turned off)
+    #assert (np.abs(SqG[0, 0]) < 1e-4)
+
+    #Attach pre-constant immediately
+    vol_Bz = abs(np.linalg.det(Lvec_recip))
+    area_Bz = np.linalg.norm(np.cross(Lvec_recip[0], Lvec_recip[1]))
+    SqG = SqG * 1/(8*np.pi**3 * vol_Bz)
+    SqG = SqG * area_Bz
 
     #   Step 3.1: define the local domain as multiple of BZ
-    LsCell_bz_local = N_local * Lvec_recip
-    # LsCell_bz_local = [N_local * Lvec_recip[0], N_local * Lvec_recip[1], Lvec_recip[2]]
+    #LsCell_bz_local = N_local * Lvec_recip
+    LsCell_bz_local = [N_local * Lvec_recip[0], N_local * Lvec_recip[1], Lvec_recip[2]]
     LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
-    LsCell_bz_norms = np.linalg.norm(Lvec_recip, axis=1)
+
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    r1 -= np.min(LsCell_bz_norms[0:2])/nks[0]
-
-    theta = np.arccos(np.dot(Lvec_recip[0],Lvec_recip[1]) / (LsCell_bz_norms[0]*LsCell_bz_norms[1]))
-    r1 *= np.sin(theta)
-    # r1*=0.5
-    H = lambda q: poly_localizer(q, r1, localizer_degree)
+    H = lambda q: poly_localizer(q, r1, 4)
 
     #   reciprocal lattice within the local domain
     #   Needs modification for 2D
@@ -1754,18 +1752,32 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4
     GptGrid3D_local = np.hstack(
         (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
 
+    # Make combined localizer grid
+    GptGridz_localizer = GptGrid3D_local + z_coord_arr[0,:]
+    for i in range(1,len(z_coords)):
+        tmp = GptGrid3D_local + z_coord_arr[i,:]
+        GptGridz_localizer = np.vstack((GptGridz_localizer, tmp))
+
+
+    # SJQ Manually load SQG and all GptGrid3D lol
+    load_from_mat = False
+    if load_from_mat:
+        SqG = scipy.io.loadmat("SqG.mat")["SqG"]
+        GptGrid3D_local = scipy.io.loadmat("all_grids.mat")["GptGrid_Localizer"]
+        GptGrid3D = scipy.io.loadmat("all_grids.mat")["GptGrid_UnitCell"]
+
     #   location/index of GptGrid3D_local within 'GptGrid3D'
-    idx_GptGrid3D_local = []
-    for Gl in GptGrid3D_local:
+    idx_GptGridz_local = []
+    for Gl in GptGridz_localizer:
         idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
         if len(idx_tmp) != 1:
             raise TypeError("Cannot locate local G vector in the reciprocal lattice.")
         else:
-            idx_GptGrid3D_local.append(idx_tmp[0])
-    idx_GptGrid3D_local = np.array(idx_GptGrid3D_local)
+            idx_GptGridz_local.append(idx_tmp[0])
+    idx_GptGridz_local = np.array(idx_GptGridz_local)
 
     #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
-    SqG_local = SqG[:, idx_GptGrid3D_local]
+    SqG_local = SqG[:, idx_GptGridz_local]
 
     #   Step 3.2: compute the Fourier transform of 1/|q|^2
     nqG_local = [N_local * nks[0], N_local * nks[1], 1]  # lattice size along each dimension in the real-space (equal to q + G size)
@@ -1775,113 +1787,75 @@ def khf_2d(kmf, nks, uKpts, made, dm_kpts = None, N_local = 5,localizer_degree=4
     Rz = np.fft.fftfreq(nqG_local[2], d=1 / nqG_local[2])
     Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
     RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
-    if debug:
-        import scipy.io
-        scipy.io.savemat('ssdata_pyscf.mat',{"RptGrid_Fourier":RptGrid3D_local, "SqG":SqG_local,"qGrid":qGrid,"GptGrid_Localizer":GptGrid3D_local})
+    # SJQ Manually load all RptGrid3D lol
+
+    if load_from_mat:
+        RptGrid3D_local = scipy.io.loadmat("all_grids.mat")["RptGrid_Fourier"]
+
+    print(RptGrid3D_local)
     from scipy.integrate import quad
     from scipy.special import i0
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     #np.pi * vac_size if x ==0 else
-    def kernel_func(R, vac_size, a,b):
-        func = lambda x: 2*np.pi * (1-np.exp(-vac_size/2 * x))/x * iv(0,-1j * x * R)
-        integral = quad(func, a, b, limit = 100)[0]
+    def kernel_func(R, Gz, vac_size, a,b):
+        func = lambda x: 8*np.pi* np.pi * x * (1- np.cos(vac_size/2 * Gz)* np.exp(-vac_size/2 * x)) * iv(0,-1j * x * R) / (x**2 + Gz**2)
+        integral = quad(func, a, b, limit = 50)[0]
         return integral
 
-    trunc_int = [kernel_func(R, vac_size, 0, r1) for R in normR]
+    #trunc_int = [kernel_func(R, vac_size, 0, r1) for R in normR]
 
-    CoulR = trunc_int
+    CoulG = np.array([kernel_func(R, z_coords[0], vac_size, 0, r1) for R in normR]).reshape(-1,1)
+    for Gz in z_coords[1:]:
+        Coul_Gz = np.array([kernel_func(R, Gz, vac_size, 0, r1) for R in normR]).reshape(-1,1)
+        CoulG = np.hstack((CoulG, Coul_Gz))
+
     # Exact expression when |R| = 0
     #CoulR[normR < 1e-8] = 8*np.pi**2 * (np.log(vac_size * r1) + gamma(0,r1 * vac_size) * gammaincc(0, r1 * vac_size) + np.euler_gamma)
 
     #   Step 4: Compute the correction
 
     ss_correction = 0
-    #   Quadrature with Coulomb kernel
-    nq = qGrid.shape[0]
-    nG_local = GptGrid3D_local.shape[0]
-    if debug:
-        qG_full = np.zeros((nq*nG_local,3))
-        SqG_local_full = np.zeros(nq*nG_local)
-        VqG_local_full = np.zeros(nq*nG_local)
-        HqG_local_full = np.zeros(nq*nG_local)
-
-    found_qG0_idx = False
-    quad_term = 0
-    for iq, qpt in enumerate(qGrid):
-        qG = qpt[None, :] + GptGrid3D_local
-
-
-        qG_no_z = qG[:,0:2]
-        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1) # (1 - np.exp(-vac_size/2 * np.sum(qG **2, axis =1))) * np.cos(vac_size/2 * qG[2])
-        coul = np.exp(-vac_size/2 * np.sqrt(np.sum(qG_no_z **2, axis =1)))
-        tmp = tmp * (1- coul) * np.cos(vac_size/2 * qG[:,2])
-        tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
-
-        abs_qG2 =  np.sum(qG ** 2, axis=1)
-        find_qG0_idx = np.where(abs_qG2==0)[0]
-        if len(find_qG0_idx) >0:
-            assert(len(find_qG0_idx)  == 1)
-            found_qG0_idx = True
-            qG0_idx=find_qG0_idx[0]
-            qG0 = qG[qG0_idx]
-            coulG0 = -np.pi*vac_size**2/2. #-pi*L_z^2/2]
-            tmp[qG0_idx] = (SqG_local[iq, qG0_idx].T)* H(qG0) * coulG0
-
-        quad_term -= np.sum(tmp)/nkpts
-        if debug:
-            qG_full[iq*nG_local:(iq+1)*nG_local,:] = qG
-            SqG_local_full[iq*nG_local:(iq+1)*nG_local] = SqG_local[iq, :]
-            HqG_local_full[iq*nG_local:(iq+1)*nG_local] = H(qG)
-            VqG_local_full[iq*nG_local:(iq+1)*nG_local] = 1./np.sum(qG ** 2, axis=1)*(1- coul)* np.cos(vac_size/2 * qG[:,2])
-
-
-
-
-    if debug:
-        import scipy.io
-        scipy.io.savemat("qG_full.mat",{"qG_full":qG_full})
-        scipy.io.savemat("HqG_local_full.mat", {"HqG_local_full":HqG_local_full})
-        scipy.io.savemat("SqG_local_full.mat", {"SqG_local_full":SqG_local_full})
-        scipy.io.savemat("VqG_local_full.mat", {"VqG_local_full":VqG_local_full})
-
     #   Integral with Fourier Approximation
-    int_term = 0
     for iq, qpt in enumerate(qGrid):
-        qG = qpt[None, :] + GptGrid3D_local
-        exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
-        tmp = (exp_mat @ CoulR) / (np.linalg.norm(np.cross(LsCell_bz_local[0], LsCell_bz_local[1])))
-        tmp = SqG_local[iq, :].T * H(qG) * tmp
+        qG = qpt[None, :] + GptGridz_localizer
+        qGxy = qpt[None, :] + GptGrid3D_local
+        exp_mat = np.exp(1j * (qGxy @ RptGrid3D_local.T))
+        tmp = (exp_mat @ CoulG) / (N_local ** 2)
+        tmp = tmp.reshape(-1, 1, order='F')
+        tmp = tmp.flatten()
+        prod = SqG_local[iq, :].T * H(qG) * tmp
+        ss_correction -= np.real(np.sum(prod)) / nkpts
 
-        int_term += np.real(np.sum(tmp))/nkpts
+    #   Quadrature with Coulomb kernel
+    for iq, qpt in enumerate(qGrid):
+        qG = qpt[None, :] + GptGridz_localizer
+        qG_no_z = qG[:, 0:2]
+        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2,axis=1)  # (1 - np.exp(-vac_size/2 * np.sum(qG **2, axis =1))) * np.cos(vac_size/2 * qG[2])
+        coul = np.exp(-vac_size / 2 * np.sqrt(np.sum(qG_no_z ** 2, axis=1))) * np.cos(vac_size / 2 * qG[:, 2])
+        prod = tmp * (1 - coul) * 4 * np.pi
+        qG0 = np.all(qG == 0, axis=1)
+        indices = np.where(qG0)[0]
+        if indices.size > 0:
+            prod[indices] = SqG_local[iq, indices] * -np.pi * vac_size ** 2 / 2
+        ss_correction += np.sum(prod) / nkpts * area_Bz
 
-    ss_correction = int_term + quad_term
-    print("Integral term ",int_term )
-    print("Quadrature term ",quad_term )
-
-    bz_dvol = np.abs(np.linalg.det(Lvec_recip))
     #ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
-    ss_correction = 4 * np.pi * ss_correction * (-1/(8* np.pi**3)) * bz_dvol/np.linalg.norm(Lvec_recip[2])
+    ss_correction =  ss_correction *vac_size_bz**2
 
-    # if found_qG0_idx:
-    omega = np.abs(np.linalg.det(kmf.cell.lattice_vectors()))
-    coulG0 = -np.pi*vac_size**2/2. #-pi*L_z^2/2]
-
-    coulG0_correction =  coulG0 / omega / nkpts * nocc
     #   Step 5: apply the correction
-    e_ex_ss = made + ss_correction
-    #   Step 6: Lin's new idea
-    e_ex_ss2 = 0
-    # Integral with Fourier Approximation
-    for iq, qpt in enumerate(qGrid):
-        qG = qpt[None, :] + GptGrid3D_local
-        exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
-        tmp = (exp_mat @ CoulR) / (np.linalg.norm(np.cross(LsCell_bz_local[0], LsCell_bz_local[1])))
-        tmp = (SqG_local[iq, :].T + nocc) * tmp
-        e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol/nkpts
-    prefactor_ex = -1 / (8 * np.pi ** 3)
+    e_ex_ss = ex + ss_correction
 
-    e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2/np.linalg.norm(Lvec_recip[2])
-    #
+    #   Step 6: Lin's new idea
+    # e_ex_ss2 = 0
+    # #   Integral with Fourier Approximation
+    # for iq, qpt in enumerate(qGrid):
+    #     qG = qpt[None, :] + GptGrid3D_local
+    #     exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
+    #     tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
+    #     tmp = (SqG_local[iq, :].T + nocc) * tmp
+    #     e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
+    # e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
+
     return e_ex_ss
 def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
@@ -1920,230 +1894,6 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
             exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
             uKpts[k, n, :] = np.squeeze(exp_part * utmp)
     return E_standard, E_madelung, uKpts
-
-
-
-def khf_ss_2d_matlab(kmf, nks, uKpts, made, N_local = 5,load_from_mat=True):
-    from scipy.special import sici
-    from scipy.special import iv
-    import scipy.io
-    def minimum_image(cell, kpts):
-        """
-        Compute the minimum image of k-points in 'kpts' in the first Brillouin zone
-
-        Arguments:
-            cell -- a cell instance
-            kpts -- a list of k-points
-
-        Returns:
-            kpts_bz -- a list of k-point in the first Brillouin zone
-        """
-        tmp_kpt = cell.get_scaled_kpts(kpts)
-        tmp_kpt = tmp_kpt - np.floor(tmp_kpt)
-        tmp_kpt[tmp_kpt > 0.5 - 1e-8] -= 1
-        kpts_bz = cell.get_abs_kpts(tmp_kpt)
-        return kpts_bz
-
-    def poly_localizer(x, r1, d):
-        x = np.asarray(x)
-        x = x / r1
-        r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
-        val = (1 - r ** d) ** d
-        if x.ndim > 1:
-            val[r > 1] = 0
-        elif r > 1:
-            val = 0
-        return val
-
-
-    #   basic info
-    # cell, kpts = build_gaussian_cell(nks,kecut=100)
-    cell = kmf.cell
-    kpts = kmf.kpts
-    # if load_from_mat:
-    #     # qGrid = scipy.io.loadmat("all_grids")["qGrid"]
-    #     kpts = scipy.io.loadmat("all_grids")["kptGrid3D"]
-    nks = np.array(nks)
-    nocc = cell.tot_electrons() // 2
-    nkpts = np.prod(nks)
-
-    Lvec_real = kmf.cell.lattice_vectors()
-    NsCell = kmf.cell.mesh
-
-    L_delta = Lvec_real / NsCell[:, None]
-    dvol = np.abs(np.linalg.det(L_delta))
-
-    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
-    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
-    rptGrid3D = mesh_idx @ L_delta
-
-    qGrid = minimum_image(cell, kpts - kpts[0, :])
-    kGrid = minimum_image(cell, kpts)
-
-
-    #Extract vacuum size information
-    non_per_dim = np.where(nks == 1)
-    if len(non_per_dim) >1:
-        raise TypeError("More than one non-periodic direction found.")
-    non_per_dim = non_per_dim[0]
-    vac_size = np.linalg.norm(Lvec_real[non_per_dim])
-
-    nbands = nocc
-    nG = np.prod(NsCell)
-
-    #   Step 1.4: compute the pair product
-    # Sample Unit cell in Reciprocal Space (Unchanged)
-    Lvec_recip = cell.reciprocal_vectors()
-    Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
-    Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
-    Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
-    Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
-    GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
-
-
-    ## SJQ GptGrid3D Checked; just the border Gs are different.
-
-    vac_size_bz = np.linalg.norm(Lvec_recip[non_per_dim])
-
-    rhokqmnG = np.zeros((nkpts, nkpts, nbands, nbands, nG), dtype=complex)
-    for k in range(nkpts):
-        for q in range(nkpts):
-            kpt1 = kGrid[k, :]
-            qpt = qGrid[q, :]
-            kpt2 = kpt1 + qpt
-
-            #   locate uk with k = kpt2
-            kpt2_BZ = minimum_image(kmf.cell, kpt2)
-            idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
-            if len(idx_kpt2) != 1:
-                raise TypeError("Cannot locate (k+q) in the kmesh.")
-            else:
-                idx_kpt2 = idx_kpt2[0]
-            kGdiff = kpt2 - kpt2_BZ
-
-            #   compute rho_{nk1, m(k1+q)}(G)}
-            for n in range(nbands):
-                for m in range(nbands):
-                    u1 = uKpts[k, n, :]
-                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
-                    rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
-                    temp_fft = np.fft.fftn((rho12 * dvol))
-                    rhokqmnG[k, q, n, m, :] = temp_fft.reshape(-1)
-
-    #   Step 2: Construct the structure factor
-    SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-    SqG = SqG - nocc  # remove the zero order approximate nocc
-    assert (np.abs(SqG[0, 0]) < 1e-4)
-
-
-    #   Step 3.1: define the local domain as multiple of BZ
-    LsCell_bz_local = N_local * Lvec_recip
-    LsCell_bz_local = [N_local * Lvec_recip[0], N_local * Lvec_recip[1], Lvec_recip[2]]
-    LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
-
-    #   localizer for the local domain
-    r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    H = lambda q: poly_localizer(q, r1, 4)
-
-    #   reciprocal lattice within the local domain
-    #   Needs modification for 2D
-    Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0] , indexing='ij')
-    GptGrid3D_local = np.hstack(
-        (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
-
-
-    # SJQ Manually load SQG and all GptGrid3D lol
-    if load_from_mat:
-        SqG = scipy.io.loadmat("SqG.mat")["SqG"]
-        GptGrid3D_local = scipy.io.loadmat("all_grids.mat")["GptGrid_Localizer"]
-        GptGrid3D = scipy.io.loadmat("all_grids.mat")["GptGrid_UnitCell"]
-
-    #   location/index of GptGrid3D_local within 'GptGrid3D'
-    idx_GptGrid3D_local = []
-    for Gl in GptGrid3D_local:
-        idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
-        if len(idx_tmp) != 1:
-            raise TypeError("Cannot locate local G vector in the reciprocal lattice.")
-        else:
-            idx_GptGrid3D_local.append(idx_tmp[0])
-    idx_GptGrid3D_local = np.array(idx_GptGrid3D_local)
-
-    #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
-    SqG_local = SqG[:, idx_GptGrid3D_local]
-
-    #   Step 3.2: compute the Fourier transform of 1/|q|^2
-    nqG_local = [N_local * nks[0], N_local * nks[1], 1]  # lattice size along each dimension in the real-space (equal to q + G size)
-    Lvec_real_local = [Lvec_real[0]/N_local, Lvec_real[1]/N_local, Lvec_real[2]]  # dual real cell of local domain LsCell_bz_local
-    Rx = np.fft.fftfreq(nqG_local[0], d=1 / nqG_local[0])
-    Ry = np.fft.fftfreq(nqG_local[1], d=1 / nqG_local[1])
-    Rz = np.fft.fftfreq(nqG_local[2], d=1 / nqG_local[2])
-    Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
-    RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
-    # SJQ Manually load all RptGrid3D lol
-
-    if load_from_mat:
-        RptGrid3D_local = scipy.io.loadmat("all_grids.mat")["RptGrid_Fourier"]
-
-    from scipy.integrate import quad
-    from scipy.special import i0
-    normR = np.linalg.norm(RptGrid3D_local, axis=1)
-    #np.pi * vac_size if x ==0 else
-    def kernel_func(R, vac_size, a,b):
-        func = lambda x: 2*np.pi * (1-np.exp(-vac_size/2 * x))/x * iv(0,-1j * x * R)
-        integral = quad(func, a, b, limit = 50)[0]
-        return integral
-
-    trunc_int = [kernel_func(R, vac_size, 0, r1) for R in normR]
-
-    CoulR = trunc_int
-    # Exact expression when |R| = 0
-    #CoulR[normR < 1e-8] = 8*np.pi**2 * (np.log(vac_size * r1) + gamma(0,r1 * vac_size) * gammaincc(0, r1 * vac_size) + np.euler_gamma)
-
-    #   Step 4: Compute the correction
-
-    ss_correction = 0
-    #   Quadrature with Coulomb kernel
-    quad_term = 0
-    for iq, qpt in enumerate(qGrid):
-        qG = qpt[None, :] + GptGrid3D_local
-        qG_no_z = qG[:,0:2]
-        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1) # (1 - np.exp(-vac_size/2 * np.sum(qG **2, axis =1))) * np.cos(vac_size/2 * qG[2])
-        coul = np.exp(-vac_size/2 * np.sqrt(np.sum(qG_no_z **2, axis =1)))
-        tmp = tmp * (1- coul) * np.cos(vac_size/2 * qG[:,2])
-        tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
-        quad_term -= np.sum(tmp)/nkpts
-
-    #   Integral with Fourier Approximation
-    int_term = 0
-    for iq, qpt in enumerate(qGrid):
-        qG = qpt[None, :] + GptGrid3D_local
-        exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
-        tmp = (exp_mat @ CoulR) / (np.linalg.norm(np.cross(LsCell_bz_local[0], LsCell_bz_local[1])))
-        tmp = SqG_local[iq, :].T * H(qG) * tmp
-        int_term += np.real(np.sum(tmp))/nkpts
-
-    bz_dvol = np.abs(np.linalg.det(Lvec_recip))
-    ss_correction = int_term + quad_term
-    #ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
-    ss_correction = 4 * np.pi * ss_correction * (-1/(8* np.pi**3)) * bz_dvol/np.linalg.norm(Lvec_recip[2])
-
-    #   Step 5: apply the correction
-    e_ex_ss = made + ss_correction
-
-    #   Step 6: Lin's new idea
-    # e_ex_ss2 = 0
-    # #   Integral with Fourier Approximation
-    # for iq, qpt in enumerate(qGrid):
-    #     qG = qpt[None, :] + GptGrid3D_local
-    #     exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
-    #     tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
-    #     tmp = (SqG_local[iq, :].T + nocc) * tmp
-    #     e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
-    # e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
-
-    return e_ex_ss
-
 if __name__ == '__main__':
     from pyscf.pbc import gto
     cell = gto.Cell()
