@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
+def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -877,7 +877,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         return ecell
 
     #Function for Madelung constant calculation following formula in Stephen's paper
-    def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None):
+    def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None, dm_kpts = None):
         #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
         nk = get_monkhorst_pack_size(icell, ikpts)
@@ -957,7 +957,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
             return ewg - ewg_analytical
 
 
-    if df_type == None:
+    if df_type is None:
         if icell.dimension <=2:
             df_type = df.GDF
         else:
@@ -1059,11 +1059,16 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         E_stagger_M = E_stagger + nocc * conv_Madelung
 
         print("Two Shot")
-    else:
+    else: # Non-SCF
         mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
-        mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
+        mf2.with_df = df_type(icell, ikpts).build()
+        if dm_kpts is None:
+            print(mf2.kernel())
+            # Get converged density matrix
+            dm_un = mf2.make_rdm1()
+        else:
+            dm_un = dm_kpts
 
-        print(mf2.kernel())
         #Defining size and making shifted mesh
         nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
         shift = mf2.cell.get_abs_kpts([0.5/n for n in nk])
@@ -1074,10 +1079,13 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         shifted_mesh = mf2.kpts + shift
         print(mf2.kpts)
         print(shifted_mesh)
-        # Get converged density matrix
-        dm_un = mf2.make_rdm1()
+
         print("\n")
-        print("Converged Density Matrix")
+        if dm_kpts is None:
+            print("Converged Density Matrix")
+        else:
+            print("Input density matrix")
+
         for i in range(0,dm_un.shape[0]):
             print("kpt: " + str(mf2.kpts[i]) + "\n")
             mat = dm_un[i,:,:]
@@ -1092,7 +1100,8 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None):
         F_shift = h1e + Veff
         s1e = get_ovlp(mf2, cell = mf2.cell, kpts = shifted_mesh)
         mo_energy, mo_coeff = mf2.eig(F_shift, s1e)
-        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff)
+        mo_occ = mf2.get_occ(mo_energy_kpts=mo_energy, mo_coeff_kpts=mo_coeff)
+        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff,mo_occ_kpts = mo_occ)
         #Computing the Staggered mesh energy
         Nk = np.prod(nk)
         E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
@@ -1615,7 +1624,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5):
+def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5,localizer_degree=4,debug = False):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1749,6 +1758,14 @@ def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5):
         tmp = GptGrid3D_local + z_coord_arr[i,:]
         GptGridz_localizer = np.vstack((GptGridz_localizer, tmp))
 
+
+    # SJQ Manually load SQG and all GptGrid3D lol
+    load_from_mat = False
+    if load_from_mat:
+        SqG = scipy.io.loadmat("SqG.mat")["SqG"]
+        GptGrid3D_local = scipy.io.loadmat("all_grids.mat")["GptGrid_Localizer"]
+        GptGrid3D = scipy.io.loadmat("all_grids.mat")["GptGrid_UnitCell"]
+
     #   location/index of GptGrid3D_local within 'GptGrid3D'
     idx_GptGridz_local = []
     for Gl in GptGridz_localizer:
@@ -1770,6 +1787,10 @@ def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5):
     Rz = np.fft.fftfreq(nqG_local[2], d=1 / nqG_local[2])
     Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
     RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
+    # SJQ Manually load all RptGrid3D lol
+
+    if load_from_mat:
+        RptGrid3D_local = scipy.io.loadmat("all_grids.mat")["RptGrid_Fourier"]
 
     print(RptGrid3D_local)
     from scipy.integrate import quad
@@ -1836,7 +1857,43 @@ def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5):
     # e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
 
     return e_ex_ss
+def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
+    from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
 
+    Madelung = madelung(kmf.cell, kpts)
+    nocc = kmf.cell.tot_electrons() // 2
+    nk = get_monkhorst_pack_size(kmf.cell, kpts)
+    Nk = np.prod(nk)
+    # dm_kpts = kmf.make_rdm1() ## make input
+    _, K = kmf.get_jk(cell=kmf.cell, dm_kpts=dm_kpts, kpts=kpts, kpts_band=kpts)
+    E_standard = -1. / Nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
+    E_standard /= 2
+    E_madelung = E_standard - nocc * Madelung
+    print(E_madelung)
+
+    # Saving the wavefunction data (Strange MKL error just feeding mo_coeff...)
+    # mo_coeff_kpts = kmf.mo_coeff_kpts # make input as well
+    Lvec_real = kmf.cell.lattice_vectors()
+    NsCell = kmf.cell.mesh
+    L_delta = Lvec_real / NsCell[:, None]
+    dvol = np.abs(np.linalg.det(L_delta))
+    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+    rptGrid3D = mesh_idx @ L_delta
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
+
+    qGrid = minimum_image(kmf.cell, kpts - kpts[0, :])
+    kGrid = minimum_image(kmf.cell, kpts)
+
+    nbands = nocc
+    nG = np.prod(NsCell)
+    uKpts = np.zeros((Nk, nbands, nG), dtype=complex)
+    for k in range(Nk):
+        for n in range(nbands):
+            utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
+            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
+            uKpts[k, n, :] = np.squeeze(exp_part * utmp)
+    return E_standard, E_madelung, uKpts
 if __name__ == '__main__':
     from pyscf.pbc import gto
     cell = gto.Cell()

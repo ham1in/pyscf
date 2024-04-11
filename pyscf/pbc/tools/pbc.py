@@ -588,7 +588,7 @@ def precompute_exx(cell, kpts):
     return ws_exx
 
 
-def madelung(cell, kpts):
+def madelung(cell, kpts,ss_terms=False):
     Nk = get_monkhorst_pack_size(cell, kpts)
     ecell = copy.copy(cell)
     ecell._atm = np.array([[1, cell._env.size, 0, 0, 0, 0]])
@@ -598,7 +598,7 @@ def madelung(cell, kpts):
     ecell.a = a = np.einsum('xi,x->xi', cell.lattice_vectors(), Nk)
 
     if cell.omega == 0:
-        return -2*ecell.ewald()
+        return -2*ecell.ewald(ss_terms=ss_terms)
 
     else:
         # cell.ewald function does not use the Coulomb kernel function
