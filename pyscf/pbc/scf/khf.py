@@ -1859,7 +1859,7 @@ def khf_2d(kmf, nks, uKpts, ex, dm_kpts = None, N_local = 5,localizer_degree=4,d
     return e_ex_ss
 def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
-
+    from pyscf.pbc.df.df_jk import get_k_kpts
     Madelung = madelung(kmf.cell, kpts)
     nocc = kmf.cell.tot_electrons() // 2
     nk = get_monkhorst_pack_size(kmf.cell, kpts)

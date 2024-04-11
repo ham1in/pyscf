@@ -20,7 +20,6 @@
 import unittest
 import tempfile
 import numpy as np
-
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
 from pyscf.pbc.scf.subsample_kpts import subsample_kpts
@@ -113,7 +112,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     return cell, kpts
 
 
-wrap_around = False
+wrap_around = True
 nkx = 4
 kmesh = [nkx, nkx, 1]
 cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)

@@ -80,8 +80,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             mf.exxdiv = None #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
-            e_ss = khf_2d(mf, nks, uKpts, E_madelung, N_local=7,localizer_degree=4,debug=True)
-            print('Ek (standard) (a.u.) = ', E_madelung, file=f)
+            e_ss = khf_2d(mf, nks, uKpts, E_standard, N_local=7,localizer_degree=4,debug=True)
+            print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
             Ek_list.append(e_ss)
