@@ -4,7 +4,7 @@ from pyscf.pbc.tools import pbc as pbc_tools
 from pyscf.lib import logger
 import copy
 
-def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None, singularity_subtraction=False, exxdiv ='ewald',wrap_around=False, ss_nlocal = 5):
+def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None, singularity_subtraction=False, exxdiv ='ewald',wrap_around=False, ss_nlocal=7):
     """
 
     Args:
