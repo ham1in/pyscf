@@ -42,9 +42,9 @@ def localizer_int_exp_2d(x, r1, d):
 
 
 
-    h = lambda x: quad(g, -1, x)[0] / int_g if x != -1 else 0
+    h = lambda x: quad(g, -1, x)[0] / int_g if (x != -1 and x != 1) else 0
     f = lambda y: h(1 - 2 * np.abs(y))
-
+    print(max(r),min(r))
     val = [f(ri) for ri in r]
 
     # if x.ndim > 1:
