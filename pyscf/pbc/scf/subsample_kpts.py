@@ -53,11 +53,14 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
     print('Ej (a.u.) = ', Ej, file=f)
     print('Ek (a.u.) = ', Ek, file=f)
 
-    Ek_list = []
-    Ej_list = []
-
-    nk_list = []
-    nks_list = []
+    results = {
+        "Ek_list":[],
+        "Ej_list":[],
+        "nk_list":[],
+        "nks_list":[],
+        "Ek_stagger_list":[],
+        "Ek_ss_list":[]
+    }
 
     if stagger_type is not None:
         print('Warning, no J term computed', file=f)
@@ -103,18 +106,20 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
-            Ek_list.append(e_ss)
-            nk_list.append(nk_div)
-            nks_list.append(copy.copy(nks))
+            results["Ek_ss_list"].append(e_ss)
+            results["Ek_list"].append(E_madelung)
+            results["nk_list"].append(nk_div)
+            results["nks_list"].append(copy.copy(nks))
         elif stagger_type !=None:
             from pyscf.pbc.scf.khf import khf_stagger
 
             Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type, df_type=df_type, dm_kpts=dm_kpts)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
-            Ek_list.append(Ek_stagger_M)
-            nk_list.append(nk_div)
-            nks_list.append(copy.copy(nks))
+            results["Ek_stagger_list"].append(Ek_stagger_M)
+            results["Ek_list"].append(Ek_standard)
+            results["nk_list"].append(nk_div)
+            results["nks_list"].append(copy.copy(nks))
 
         else:
 
@@ -131,16 +136,16 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
 
             print('Ej (a.u.) = ', Ej, file = f)
             print('Ek (a.u.) = ', Ek, file = f)
-            Ej_list.append(Ej)
-            Ek_list.append(Ek)
-            nk_list.append(nk_div)
-            nks_list.append(copy.copy(nks))
+            results["Ej_list"].append(Ej)
+            results["Ek_list"].append(Ek)
+            results["nk_list"].append(nk_div)
+            results["nks_list"].append(copy.copy(nks))
 
         kpts_div_old = kpts_div
 
 
 
-    return nk_list, nks_list, Ej_list, Ek_list
+    return results
 
 
 

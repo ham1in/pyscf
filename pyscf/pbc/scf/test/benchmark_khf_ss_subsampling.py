@@ -158,13 +158,13 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 
 
 div_vector = [2,2]
-nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True,wrap_around=wrap_around)
+results = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True,wrap_around=wrap_around)
 
 
 print('=== Kpoint Subsampling Results (SS) === ')
 print('\nnk list')
-print(nk_list)
+print(results["nk_list"])
 print('\nnks list')
-print(nks_list)
+print(results["nks_list"])
 print('\nEk list')
-print(Ek_list)
+print(results["Ek_list"])

@@ -1745,7 +1745,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=default_locali
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    H = lambda q: poly_localizer(q, r1, d=localizer_degree)
+    H = lambda q: localizer(q,r1)
 
     #   reciprocal lattice within the local domain
     #   Needs modification for 2D
