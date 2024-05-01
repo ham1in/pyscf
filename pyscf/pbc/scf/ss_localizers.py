@@ -14,7 +14,7 @@ def localizer_exp_2d(x, r1, d):
     x = np.asarray(x)
     x = x[:, :2] / r1
     r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
-    val = np.exp(-c/(1.-np.power(r,d))) / np.exp(c)
+    val = np.exp(-c/(1.-np.power(r,d))) / np.exp(-c)
     if x.ndim > 1:
         val[r > 1] = 0
     elif r > 1:
