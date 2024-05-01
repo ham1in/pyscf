@@ -160,7 +160,7 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 div_vector = [2,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
-localizer = lambda q, r1: ss_localizers.localizer_exp_2d(q, r1, 4) #polynomial localizer of degree 4
+localizer = lambda q, r1: ss_localizers.localizer_int_exp_2d(q, r1, 4) #polynomial localizer of degree 4
 results = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True,wrap_around=wrap_around, ss_localizer=localizer)
 
 
