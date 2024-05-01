@@ -42,7 +42,7 @@ filename = 'BN_HF_' + str(nks[0]) + str(nks[1])  +'.pkl'
 with open(filename,'rb') as file:
      data = pickle.load(file)
 
-e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 9,debug=True)
+e_ss = khf_2d(kmf, nks, data["uKpts"], data["e_ex_m"], N_local=9, debug=True)
 
 print("Regular energy")
 print(data["e_ex_m"])

@@ -1624,7 +1624,9 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-def khf_2d(kmf, nks, uKpts, ex, N_local = 5,localizer_degree=4,debug = False):
+import pyscf.pbc.scf.ss_localizers as ss_localizers
+default_localizer = lambda q,r1:ss_localizers.localizer_poly_2d(q,r1,4)
+def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=default_localizer):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1743,7 +1745,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local = 5,localizer_degree=4,debug = False):
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
-    H = lambda q: poly_localizer(q, r1, d=localizer_degree)
+    H = lambda q: localizer(q,r1)
 
     #   reciprocal lattice within the local domain
     #   Needs modification for 2D

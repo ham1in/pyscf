@@ -41,7 +41,7 @@ import pickle
 with open('H2_HF_22_vac24.pkl','rb') as file:
      data = pickle.load(file)
 
-e_ss = khf_2d(kmf, nks,data["uKpts"],data["e_ex_m"], N_local = 9,debug=True,localizer_degree=4)
+e_ss = khf_2d(kmf, nks, data["uKpts"], data["e_ex_m"], N_local=9, debug=True)
 
 print("Regular energy")
 print(data["e_ex_m"])
