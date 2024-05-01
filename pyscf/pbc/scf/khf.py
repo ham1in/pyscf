@@ -1624,9 +1624,8 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     return e_ex_ss, e_ex_ss2
 
-import pyscf.pbc.scf.ss_localizers as ss_localizers
-default_localizer = lambda q,r1:ss_localizers.localizer_poly_2d(q,r1,4)
-def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=default_localizer):
+
+def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1646,16 +1645,9 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=default_locali
         kpts_bz = cell.get_abs_kpts(tmp_kpt)
         return kpts_bz
 
-    def poly_localizer(x, r1, d):
-        x = np.asarray(x)
-        x = x[:, :2] / r1
-        r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
-        val = (1 - r ** d) ** d
-        if x.ndim > 1:
-            val[r > 1] = 0
-        elif r > 1:
-            val = 0
-        return val
+    if localizer is None:
+        import pyscf.pbc.scf.ss_localizers as ss_localizers
+        localizer = lambda q, r1: ss_localizers.localizer_poly_2d(q, r1, 4)
 
     #   basic info
     cell = kmf.cell
