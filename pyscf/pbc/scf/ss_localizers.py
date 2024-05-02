@@ -35,14 +35,15 @@ def localizer_int_exp_2d(x, r1, d):
     g = lambda x: np.exp(-c / (1 - x ** d))
 
     # To prevent error in h's integration bounds
-    r[r > 1.0] = 1.0
+    eps = np.finfo(float).eps
+    r[r >= 1.0] = 1.0-eps
 
     from scipy.integrate import quad
-    int_g = quad(g, -1, 1)[0]
+    int_g = quad(g, -1+eps, 1-eps)[0]
 
 
 
-    h = lambda x: quad(g, -1, x,points=[-1,1])[0] / int_g if (x != -1) else 0
+    h = lambda x: quad(g, -1+eps, x,points=[-1,1])[0] / int_g if (x != -1) else 0
     f = lambda y: h(1 - 2 * np.abs(y))
     print(max(r),min(r))
     val = [f(ri) for ri in r]
