@@ -53,3 +53,19 @@ def localizer_int_exp_2d(x, r1, d):
     # elif r > 1:
     #     val = 0
     return val
+
+def localizer_rootexp_2d(x,r1,p=1.0,k=1.0):
+    c = 1.0
+    x = np.asarray(x)
+    x = x[:, :2] / r1
+    r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
+    norm_fac = (p+1.5)/0.5
+    val = np.exp(r**(2*k)/(r**2-1))*np.sin((p+1.5)*r)/np.sin(0.5*r) / norm_fac
+
+    if x.ndim > 1:
+        val[r > 1] = 0
+        val[r == 0] = 1.0
+        val[r == 1] = 0.0
+    elif r > 1:
+        val = 0
+    return val

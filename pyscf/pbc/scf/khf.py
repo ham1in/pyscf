@@ -1820,6 +1820,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
         prod = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction -= np.real(np.sum(prod)) / nkpts
 
+    int_term = ss_correction
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGridz_localizer
@@ -1834,8 +1835,11 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
         ss_correction += np.sum(prod) / nkpts * area_Bz
 
     #ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
-    ss_correction =  ss_correction *vac_size_bz**2
 
+    quad_term = ss_correction-int_term
+    ss_correction =  ss_correction *vac_size_bz**2
+    quad_term = quad_term *vac_size_bz**2
+    int_term = int_term * vac_size_bz ** 2
     #   Step 5: apply the correction
     e_ex_ss = ex + ss_correction
 
@@ -1850,7 +1854,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
     #     e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
     # e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
 
-    return e_ex_ss
+    return e_ex_ss, int_term, quad_term
 def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
     Madelung = madelung(kmf.cell, kpts)

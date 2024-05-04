@@ -55,11 +55,14 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
 
     results = {
         "Ek_list":[],
+        "Ek_uncorr_list":[],
         "Ej_list":[],
         "nk_list":[],
         "nks_list":[],
         "Ek_stagger_list":[],
-        "Ek_ss_list":[]
+        "Ek_ss_list":[],
+        "int_terms": [],
+        "quad_terms": []
     }
 
     if stagger_type is not None:
@@ -102,7 +105,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             mf.exxdiv = None #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
-            e_ss = khf_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=True,localizer=ss_localizer)
+            e_ss,int_term,quad_term = khf_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=True,localizer=ss_localizer)
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
@@ -110,6 +113,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             results["Ek_list"].append(E_madelung)
             results["nk_list"].append(nk_div)
             results["nks_list"].append(copy.copy(nks))
+            results["int_terms"].append(int_term)
+            results["quad_terms"].append(quad_term)
+            results["Ek_uncorr_list"].append(E_standard)
         elif stagger_type !=None:
             from pyscf.pbc.scf.khf import khf_stagger
 
