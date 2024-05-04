@@ -1821,6 +1821,12 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
         ss_correction -= np.real(np.sum(prod)) / nkpts
 
     int_term = ss_correction
+    if debug:
+        nqG_local = N_local**2*nkpts
+        qG_full = np.zeros([nqG_local,3])
+        HqG_local_full = np.zeros([nqG_local])
+        SqG_local_full = np.zeros([nqG_local])
+        VqG_local_full = np.zeros([nqG_local])
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGridz_localizer
@@ -1833,6 +1839,21 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
         if indices.size > 0:
             prod[indices] = SqG_local[iq, indices] * -np.pi * vac_size ** 2 / 2
         ss_correction += np.sum(prod) / nkpts * area_Bz
+        if debug:
+            qGz0 =qG[qG[:,2]==0]
+            SqGz0 = SqG_local[iq, :].T[qG[:, 2] == 0]
+
+            qG_full[iq*N_local**2:(iq+1)*N_local**2] = qGz0
+            SqG_local_full[iq*N_local**2:(iq+1)*N_local**2]=SqGz0
+            HqG_local_full[iq*N_local**2:(iq+1)*N_local**2]=H(qGz0)
+            VqG_local_full[iq*N_local**2:(iq+1)*N_local**2]=(1 - coul[qG[:,2]==0])/ np.sum(qGz0 ** 2,axis=1)
+    if debug:
+        print('Saving qG mat files requested')
+        scipy.io.savemat('qG_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"qG_full":qG_full})
+        scipy.io.savemat('HqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"HqG_local_full":HqG_local_full})
+        scipy.io.savemat('VqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"VqG_local_full":VqG_local_full})
+        scipy.io.savemat('SqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"SqG_local_full":SqG_local_full})
+
 
     #ss_correction = 4 * np.pi * ss_correction/ np.linalg.det(Lvec_real)/np.linalg.norm(Lvec_recip[2])  # Coulomb kernel = 4 pi / |q|^2
 
