@@ -150,8 +150,10 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
 
         kpts_div_old = kpts_div
 
-
-
+    print('=== Kpoint Subsampling Results === ')
+    for key, value in results.items():
+        print('\n'+key)
+        print(value)
     return results
 
 

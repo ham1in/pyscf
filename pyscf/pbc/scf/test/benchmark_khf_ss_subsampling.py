@@ -162,21 +162,3 @@ div_vector = [1]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 localizer = lambda q, r1: ss_localizers.localizer_poly_2d(q,r1,d=4) #polynomial localizer of degree 2
 results = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, singularity_subtraction=True,wrap_around=wrap_around, ss_localizer=localizer,ss_debug=True)
-
-
-print('=== Kpoint Subsampling Results (SS) === ')
-print('\nnk list')
-print(results["nk_list"])
-print('\nnks list')
-print(results["nks_list"])
-print('\nEk list')
-print(results["Ek_list"])
-print('\nEk SS list')
-print(results["Ek_ss_list"])
-print('\nInt terms (H)')
-print(results["int_terms"])
-print('\nQuad terms')
-print(results["quad_terms"])
-print('\nEk_uncorr + quad terms')
-uncorr_quad_terms = np.array(results["quad_terms"])+ np.array(results["Ek_uncorr_list"])
-print(uncorr_quad_terms.tolist())
