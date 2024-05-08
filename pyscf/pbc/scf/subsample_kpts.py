@@ -1,11 +1,12 @@
-
 import numpy as np
 from pyscf.pbc.tools import pbc as pbc_tools
 from pyscf.lib import logger
 import copy
 
-def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_type = None,  exxdiv ='ewald',
-                   wrap_around=False, singularity_subtraction=False, ss_nlocal=7, ss_localizer=None,ss_debug=False):
+
+def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type=None, exxdiv='ewald',
+                   wrap_around=False, singularity_subtraction=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,
+                   ss_r1_prefactor=1.0):
     """
 
     Args:
@@ -25,9 +26,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
         Ej_list: Hartree term for each subsampling iteration
         Ek_list: Exchange term for each subsampling iteration
     """
-    nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell,kpts = mf.kpts)
+    nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell, kpts=mf.kpts)
     nk = np.prod(nks)
-    assert(nk % (np.prod(div_vector)**dim) == 0, "Div vector must divide nk")
+    assert (nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk")
 
     # Sanity run
     if mf.cell.output is not None:
@@ -35,13 +36,13 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
     else:
         f = None
     print('Recomputing jk', file=f)
-    print('Sampling ', nk, 'k-points',file=f)
+    print('Sampling ', nk, 'k-points', file=f)
     mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
 
     if dm_kpts is None:
         dm_kpts = mf.make_rdm1()
     mf.exxdiv = exxdiv
-    J, K = mf.get_jk(cell = mf.cell, dm_kpts = dm_kpts, kpts = mf.kpts, kpts_band = mf.kpts, with_j = True)
+    J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
 
     Ek = -1. / nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
     Ek /= 2.
@@ -55,13 +56,13 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
     print('Ek (a.u.) = ', Ek, file=f)
 
     results = {
-        "Ek_list":[],
-        "Ek_uncorr_list":[],
-        "Ej_list":[],
-        "nk_list":[],
-        "nks_list":[],
-        "Ek_stagger_list":[],
-        "Ek_ss_list":[],
+        "Ek_list": [],
+        "Ek_uncorr_list": [],
+        "Ej_list": [],
+        "nk_list": [],
+        "nks_list": [],
+        "Ek_stagger_list": [],
+        "Ek_ss_list": [],
         "int_terms": [],
         "quad_terms": []
     }
@@ -70,7 +71,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
         print('Warning, no J term computed', file=f)
 
     # for div in div_vector:
-    for j in range(-1,len(div_vector)):
+    for j in range(-1, len(div_vector)):
         if j == -1:
             div = 1
             for i in range(dim):
@@ -91,11 +92,10 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             diff_mat = kpts_div_old - kpts_div[ik]
             diff_norm = np.einsum('ij,ij->i', diff_mat, diff_mat)
             diff0 = np.where(diff_norm == 0)
-            assert(len(diff0) == 1)
-            assert(len(diff0[0]) == 1)
+            assert (len(diff0) == 1)
+            assert (len(diff0[0]) == 1)
             diff0 = diff0[0][0]
             subsample_indices.append(diff0)
-
 
         dm_kpts = dm_kpts[subsample_indices]
         mo_coeff_kpts = mo_coeff_kpts[subsample_indices]
@@ -103,10 +103,11 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
         if singularity_subtraction:
             from pyscf.pbc.scf.khf import make_ss_inputs, khf_2d
             mf.kpts = kpts_div
-            mf.exxdiv = None #so that standard energy is computed without madelung
+            mf.exxdiv = None  #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
-            e_ss,int_term,quad_term = khf_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,localizer=ss_localizer)
+            e_ss, int_term, quad_term = khf_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
+                                               localizer=ss_localizer, r1_prefactor=ss_r1_prefactor)
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
@@ -117,10 +118,11 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             results["int_terms"].append(int_term)
             results["quad_terms"].append(quad_term)
             results["Ek_uncorr_list"].append(E_standard)
-        elif stagger_type !=None:
+        elif stagger_type != None:
             from pyscf.pbc.scf.khf import khf_stagger
 
-            Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type, df_type=df_type, dm_kpts=dm_kpts)
+            Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
+                                                                df_type=df_type, dm_kpts=dm_kpts)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_stagger_list"].append(Ek_stagger_M)
@@ -137,12 +139,11 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
             Ej = 1. / nk_div * np.einsum('kij,kji', dm_kpts, J)
             Ej /= 2.
 
-
             Ek = Ek.real
             Ej = Ej.real
 
-            print('Ej (a.u.) = ', Ej, file = f)
-            print('Ek (a.u.) = ', Ek, file = f)
+            print('Ej (a.u.) = ', Ej, file=f)
+            print('Ek (a.u.) = ', Ek, file=f)
             results["Ej_list"].append(Ej)
             results["Ek_list"].append(Ek)
             results["nk_list"].append(nk_div)
@@ -152,9 +153,6 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts = None, stagger_type = None, df_
 
     print('=== Kpoint Subsampling Results === ')
     for key, value in results.items():
-        print('\n'+key)
+        print('\n' + key)
         print(value)
     return results
-
-
-

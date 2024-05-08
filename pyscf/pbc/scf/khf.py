@@ -1625,7 +1625,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
     return e_ex_ss, e_ex_ss2
 
 
-def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
+def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefactor=1.0):
     from scipy.special import sici
     from scipy.special import iv
     def minimum_image(cell, kpts):
@@ -1737,6 +1737,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None):
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms[0:2]) / 2
+    r1 = r1_prefactor*r1
     H = lambda q: localizer(q,r1)
 
     #   reciprocal lattice within the local domain
