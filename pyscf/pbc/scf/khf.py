@@ -1674,7 +1674,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefa
     nG = np.prod(NsCell)
 
     #   Step 1.4: compute the pair product
-    # Sample Unit cell in Reciprocal Space (Unchanged)
+    # Sample Unit cell in Reciprocal Space
     Lvec_recip = cell.reciprocal_vectors()
     Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
     Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
@@ -1692,6 +1692,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefa
 
     vac_size_bz = np.linalg.norm(Lvec_recip[2])
 
+    #Compute pair products via Fourier transform, define structure factor
     SqG = np.zeros((nkpts, nG), dtype=np.float64)
     print("MEM USAGE IS:", SqG.nbytes)
     for q in range(nkpts):
@@ -1715,14 +1716,11 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefa
                     u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
                     temp_fft = np.fft.fftn((rho12 * dvol))
-                    # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
                     temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
             SqG[q, :] += temp_SqG_k / nkpts
 
-    # SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
     #SqG = SqG - nocc  # remove the zero order approximate nocc (turned off)
-    #assert (np.abs(SqG[0, 0]) < 1e-4)
 
     #Attach pre-constant immediately
     vol_Bz = abs(np.linalg.det(Lvec_recip))
@@ -1787,7 +1785,6 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefa
     if load_from_mat:
         RptGrid3D_local = scipy.io.loadmat("all_grids.mat")["RptGrid_Fourier"]
 
-    print(RptGrid3D_local)
     from scipy.integrate import quad
     from scipy.special import i0
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
