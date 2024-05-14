@@ -1,7 +1,7 @@
 from pyscf import lib
 from pyscf import pbc as pbc
 from pyscf.pbc import gto, scf, df, dft
-from pyscf.pbc.scf.khf import khf_2d
+from pyscf.pbc.scf.khf import khf_ss_2d
 
 def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell = pbc.gto.Cell()
@@ -42,7 +42,7 @@ filename = 'BN_HF_' + str(nks[0]) + str(nks[1])  +'.pkl'
 with open(filename,'rb') as file:
      data = pickle.load(file)
 
-e_ss = khf_2d(kmf, nks, data["uKpts"], data["e_ex_m"], N_local=9, debug=True)
+e_ss = khf_ss_2d(kmf, nks, data["uKpts"], data["e_ex_m"], N_local=9, debug=True)
 
 print("Regular energy")
 print(data["e_ex_m"])

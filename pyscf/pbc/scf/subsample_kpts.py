@@ -28,8 +28,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
     """
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell, kpts=mf.kpts)
     nk = np.prod(nks)
-    assert (nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk")
-
+    assert(nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk")
+    assert(dim == mf.cell.dimension, "Dimension must match cell dimension")
     # Sanity run
     if mf.cell.output is not None:
         f = open(mf.cell.output, "a")
@@ -64,7 +64,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
         "Ek_stagger_list": [],
         "Ek_ss_list": [],
         "int_terms": [],
-        "quad_terms": []
+        "quad_terms": [],
+        "Ek_ss_2_list": []
     }
 
     if stagger_type is not None:
@@ -101,13 +102,20 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
         mo_coeff_kpts = mo_coeff_kpts[subsample_indices]
 
         if singularity_subtraction:
-            from pyscf.pbc.scf.khf import make_ss_inputs, khf_2d
+            from pyscf.pbc.scf.khf import make_ss_inputs, khf_ss_2d, khf_ss_3d
             mf.kpts = kpts_div
             mf.exxdiv = None  #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
-            e_ss, int_term, quad_term = khf_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
-                                               localizer=ss_localizer, r1_prefactor=ss_r1_prefactor)
+            if mf.cell.dimension ==3:
+                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_madelung, N_local=ss_nlocal, debug=ss_debug,
+                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor)
+                results["Ek_ss_2_list"].append(ex_ss_2)
+
+            elif mf.cell.dimension ==2:
+                e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
+                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor)
+                
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
