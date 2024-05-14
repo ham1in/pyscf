@@ -1406,8 +1406,26 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
+def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0):
+    """
+    Perform Singularity Subtraction for Fock Exchange (3D) calculation.
+
+    Args:
+        kmf (object): A Kohn-Sham mean-field object.
+        nks (array-like): A 1D array-like object containing the number of k-points along each dimension.
+        uKpts (ndarray): A 3D array containing the wavefunction evaluated on all grid points. From mak
+        ex_madelung (float): The initial exchange energy with the madelung correction
+        N_local (int, optional): Number of BZs to include for the support along 1 dimension. Defaults to 7.
+        debug (bool, optional): Whether to print debug information. Defaults to False.
+        localizer (callable, optional): Localizer function. Must take in q, r1 as arguments. Defaults the polynomial localizer.
+        r1_prefactor (float, optional): A prefactor for the localizer radius. Defaults to 1.0.
+
+    Returns:
+        tuple: A tuple containing the exchange energy with singularity subtraction (e_ex_ss) and an alternative exchange energy calculation (e_ex_ss2).
+    """
+    # Function implementation goes here
     #Xin's version - using for test/benchmarking
+    print("Singularity Subtraction for Fock Exchange (3D) requested")
     from scipy.special import sici
     def minimum_image(cell, kpts):
         """
@@ -1425,17 +1443,10 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
         tmp_kpt[tmp_kpt > 0.5 - 1e-8] -= 1
         kpts_bz = cell.get_abs_kpts(tmp_kpt)
         return kpts_bz
-
-    def poly_localizer(x, r1, d):
-        x = np.asarray(x)
-        x = x / r1
-        r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
-        val = (1 - r ** d) ** d
-        if x.ndim > 1:
-            val[r > 1] = 0
-        elif r > 1:
-            val = 0
-        return val
+    
+    if localizer is None:
+        import pyscf.pbc.scf.ss_localizers as ss_localizers
+        localizer = lambda q, r1: ss_localizers.localizer_poly(q, r1, 4)
 
     #   basic info
     cell = kmf.cell
@@ -1552,7 +1563,8 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms) / 2
-    H = lambda q: poly_localizer(q, r1, 6)
+    r1 = r1_prefactor * r1
+    H = lambda q: localizer(q,r1)
 
     #   reciprocal lattice within the local domain
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
@@ -1597,6 +1609,7 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
         tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
         ss_correction -= np.sum(tmp) * bz_dvol
+    quad_terms = ss_correction
 
     #   Integral with Fourier Approximation
     for iq, qpt in enumerate(qGrid):
@@ -1605,11 +1618,11 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
         tmp = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
-
+    int_terms = ss_correction - quad_terms
     ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
 
     #   Step 5: apply the correction
-    e_ex_ss = made + prefactor_ex * ss_correction
+    e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
 
     #   Step 6: Lin's new idea
     e_ex_ss2 = 0
@@ -1620,14 +1633,36 @@ def khf_exchange_ss(kmf, nks, uKpts, made, N_local=5):
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
         tmp = (SqG_local[iq, :].T + nocc) * tmp
         e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
-    e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
+    e_ex_ss2 = np.real(prefactor_ex * 4 * np.pi * e_ex_ss2)
 
-    return e_ex_ss, e_ex_ss2
+    return e_ex_ss, e_ex_ss2, int_terms, quad_terms
 
 
-def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefactor=1.0):
+def khf_ss_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefactor=1.0):
+    """
+    Perform Singularity Subtraction for Fock Exchange (2D) calculation.
+
+    Args:
+        kmf (object): A Kohn-Sham mean-field object.
+        nks (array-like): Number of k-points in each direction.
+        uKpts (array-like): Kohn-Sham orbitals generated from make_ss_inputs.
+        ex (float): Exchange energy (no Madelung correction).
+        N_local (int, optional): Number of BZs for the support. Defaults to 5.
+        debug (bool, optional): Enable printing of SqG, HqG, VqG mat files.
+        localizer (function, optional): Localizer function. Defaults to the 2D Polynomial Localizer, d=4.
+        r1_prefactor (float, optional): Scaling prefactor for the localizer radius. Defaults to 1.0.
+
+    Returns:
+        float: The singularity subtraction correction.
+
+    Raises:
+        TypeError: If the (k+q) point cannot be located in the kmesh.
+
+    """
     from scipy.special import sici
     from scipy.special import iv
+    
+    print("Singularity Subtraction for Fock Exchange (2D) requested")
     def minimum_image(cell, kpts):
         """
         Compute the minimum image of k-points in 'kpts' in the first Brillouin zone
@@ -1860,7 +1895,7 @@ def khf_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefa
     quad_term = quad_term *vac_size_bz**2
     int_term = int_term * vac_size_bz ** 2
     #   Step 5: apply the correction
-    e_ex_ss = ex + ss_correction
+    e_ex_ss = np.real(ex + ss_correction)
 
     #   Step 6: Lin's new idea
     # e_ex_ss2 = 0
@@ -1909,7 +1944,8 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
             utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
             exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
             uKpts[k, n, :] = np.squeeze(exp_part * utmp)
-    return E_standard, E_madelung, uKpts
+    return np.real(E_standard), np.real(E_madelung), uKpts
+
 if __name__ == '__main__':
     from pyscf.pbc import gto
     cell = gto.Cell()
