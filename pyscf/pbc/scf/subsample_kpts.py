@@ -4,9 +4,8 @@ from pyscf.lib import logger
 import copy
 
 
-def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type=None, exxdiv='ewald',
-                   wrap_around=False, singularity_subtraction=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,
-                   ss_r1_prefactor=1.0):
+def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
+                   wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0):
     """
 
     Args:
@@ -68,7 +67,38 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
         "Ek_ss_2_list": []
     }
 
-    if stagger_type is not None:
+    stagger_routine_to_type= {
+        "stagger_nonscf": "Non-SCF",
+        "stagger": "Regular",
+        "stagger_splitscf" : "Split-SCF",
+        "stagger_nonscf_fourier": "Non-SCF",
+
+    }
+    khf_routines_stagger = [
+        "stagger_nonscf",
+        "stagger_splitscf"
+        "stagger",
+        "singularity_subtraction"
+        "fourier"
+        "stagger_nonscf_fourier"
+    ]
+    khf_routines_ss = [
+        "singularity_subtraction",
+        "fourier"
+    ]
+    khf_routines_all = [
+        "standard"
+    ]
+
+    khf_routines_all.extend(khf_routines_ss).extend(khf_routines_stagger)
+
+    if khf_routine not in khf_routines_all:
+        raise ValueError(f'khf_routine must be one of {khf_routines_all}')
+    else:
+        print('khf_routine = ', khf_routine, file=f)
+
+
+    if khf_routine in khf_routines_stagger:
         print('Warning, no J term computed', file=f)
 
     # for div in div_vector:
@@ -101,15 +131,17 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
         dm_kpts = dm_kpts[subsample_indices]
         mo_coeff_kpts = mo_coeff_kpts[subsample_indices]
 
-        if singularity_subtraction:
+        if khf_routine in khf_routines_ss:
             from pyscf.pbc.scf.khf import make_ss_inputs, khf_ss_2d, khf_ss_3d
             mf.kpts = kpts_div
             mf.exxdiv = None  #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
+            
+            fourier_only = (khf_routine == "fourier")
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_madelung, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor)
+                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only)
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
             elif mf.cell.dimension ==2:
@@ -126,9 +158,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
             results["int_terms"].append(int_term)
             results["quad_terms"].append(quad_term)
             results["Ek_uncorr_list"].append(E_standard)
-        elif stagger_type != None:
+        elif khf_routine in khf_routines_stagger:
             from pyscf.pbc.scf.khf import khf_stagger
-
+            stagger_type = stagger_routine_to_type[khf_routine]
             Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
                                                                 df_type=df_type, dm_kpts=dm_kpts)
 
@@ -138,7 +170,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
             results["nk_list"].append(nk_div)
             results["nks_list"].append(copy.copy(nks))
 
-        else:
+        else: # standard exchange 
 
             J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
             Ek = -1. / nk_div * np.einsum('kij,kji', dm_kpts, K) * 0.5

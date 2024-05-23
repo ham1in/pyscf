@@ -38,7 +38,7 @@ cell.build(unit='B',
 kpts = cell.make_kpts(kmesh)
 # Compute Staggered Mesh Exact Exchange for 2D System
 # mf.with_df = df.FFTDF(cell)
-Ek_stagger_M, Ek_stagger, Ek_standard = khf.khf_stagger(icell=cell,ikpts=kpts,version = "Non_SCF",df_type=df.FFTDF)
+Ek_stagger_M, Ek_stagger, Ek_standard = khf.khf_stagger(icell=cell,ikpts=kpts,version = "Non-SCF",df_type=df.FFTDF)
 print('Ek_stagger_M, Ek_stagger (a.u.) is')
 print(Ek_stagger_M,Ek_stagger)
 np.testing.assert_almost_equal(Ek_stagger_M, -2.2766118557347053, 4)

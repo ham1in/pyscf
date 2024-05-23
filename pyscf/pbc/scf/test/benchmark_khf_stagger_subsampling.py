@@ -167,7 +167,7 @@ print(Ek_list)
 
 
 
-nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector,stagger_type="Non_SCF",df_type=df_type)
+nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=2,div_vector=div_vector,khf_routine="stagger_nonscf",df_type=df_type)
 
 
 print('=== Kpoint Subsampling Results (with Stagger) === ')

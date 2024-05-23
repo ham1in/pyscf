@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None, kshift_rel = 0.5, fourinterp = False,N_local=7):
+def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, kshift_rel = 0.5, fourinterp = False,N_local=7):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -964,9 +964,9 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
             df_type = df.FFTDF
 
     if fourinterp:
-        assert(version == "Non_SCF", "Fourier interpolation only available for Non-SCF version")
+        assert(version == "Non-SCF", "Fourier interpolation only available for Non-SCF version")
 
-    if version == "One_shot":
+    if version == "Regular":
         nks = get_monkhorst_pack_size(icell, ikpts)
         shift = icell.get_abs_kpts([kshift_rel / n for n in nks])
         if icell.dimension <=2:
@@ -1019,7 +1019,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
         E_stagger_M = E_stagger + nocc * conv_Madelung
         print("One Shot")
 
-    elif version == "Two_shot":
+    elif version == "Split-SCF":
         #Regular scf calculation
         mfs = scf.KHF(icell, ikpts)
         print(mfs.kernel())
