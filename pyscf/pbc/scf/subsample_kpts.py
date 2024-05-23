@@ -105,7 +105,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, stagger_type=None, df_type
             from pyscf.pbc.scf.khf import make_ss_inputs, khf_ss_2d, khf_ss_3d
             mf.kpts = kpts_div
             mf.exxdiv = None  #so that standard energy is computed without madelung
-            E_standard, E_madelung, uKpts = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
+            E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_madelung, N_local=ss_nlocal, debug=ss_debug,

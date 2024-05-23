@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None):
+def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None, fourinterp = False):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -962,6 +962,9 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
             df_type = df.GDF
         else:
             df_type = df.FFTDF
+
+    if fourinterp:
+        assert(version == "Non_SCF", "Fourier interpolation only available for Non-SCF version")
 
     if version == "One_shot":
         nk = get_monkhorst_pack_size(icell, ikpts)
@@ -1102,6 +1105,14 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
         mo_energy, mo_coeff = mf2.eig(F_shift, s1e)
         mo_occ = mf2.get_occ(mo_energy_kpts=mo_energy, mo_coeff_kpts=mo_coeff)
         dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff,mo_occ_kpts = mo_occ)
+
+
+        if fourinterp:
+            # Extract uKpts from each set of kpts
+
+             E_standard, E_madelung, uKpts1, qGrid, kGrid = make_ss_inputs(mf2,mf2.kpts,dm_un, mf2.mo_coeff_kpts())
+
+
         #Computing the Staggered mesh energy
         Nk = np.prod(nk)
         E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
@@ -1155,7 +1166,7 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0):
+def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0,fourier_only=False):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1353,6 +1364,10 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
     int_terms = ss_correction - quad_terms
     ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
+    if fourier_only:
+        print("Returning integral term with Fourier interpolation only. Please double check that the step localizer is used.")
+        return  4*np.pi*int_terms
+    
 
     #   Step 5: apply the correction
     e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
@@ -1642,7 +1657,10 @@ def khf_ss_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_pr
     # e_ex_ss2 = prefactor_ex * 4 * np.pi * e_ex_ss2
 
     return e_ex_ss, int_term, quad_term
-def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
+
+
+
+def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts,shiftFac=np.zeros(3)):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
     Madelung = madelung(kmf.cell, kpts)
     nocc = kmf.cell.tot_electrons() // 2
@@ -1665,8 +1683,10 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
     rptGrid3D = mesh_idx @ L_delta
     aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
+    
+    kshift_abs = mf.cell.reciprocal_vectors()*shiftFac / nk
 
-    qGrid = minimum_image(kmf.cell, kpts - kpts[0, :])
+    qGrid = minimum_image(kmf.cell, kshift_abs - kpts)
     kGrid = minimum_image(kmf.cell, kpts)
 
     nbands = nocc
@@ -1677,7 +1697,7 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
             utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
             exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
             uKpts[k, n, :] = np.squeeze(exp_part * utmp)
-    return np.real(E_standard), np.real(E_madelung), uKpts
+    return np.real(E_standard), np.real(E_madelung), uKpts, qGrid, kGrid
 
 if __name__ == '__main__':
     from pyscf.pbc import gto

@@ -1,5 +1,15 @@
 import numpy as np
 
+def localizer_step(x,r1,d):
+    x = np.asarray(x)
+    x = x / r1
+    r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
+    val = np.ones(shape=r.shape)
+    if x.ndim > 1:
+        val[r > 1] = 0
+    elif r > 1:
+        val = 0
+    return val
 
 def localizer_poly(x, r1, d):
     x = np.asarray(x)
