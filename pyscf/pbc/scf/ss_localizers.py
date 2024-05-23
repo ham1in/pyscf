@@ -1,6 +1,6 @@
 import numpy as np
 
-def localizer_step(x,r1,d):
+def localizer_step(x,r1):
     x = np.asarray(x)
     x = x / r1
     r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)

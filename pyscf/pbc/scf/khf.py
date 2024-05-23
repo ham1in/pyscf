@@ -859,7 +859,7 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None, fourinterp = False):
+def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None, kshift_rel = 0.5, fourinterp = False,N_local=7):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -967,16 +967,16 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
         assert(version == "Non_SCF", "Fourier interpolation only available for Non-SCF version")
 
     if version == "One_shot":
-        nk = get_monkhorst_pack_size(icell, ikpts)
-        shift = icell.get_abs_kpts([0.5 / n for n in nk])
+        nks = get_monkhorst_pack_size(icell, ikpts)
+        shift = icell.get_abs_kpts([kshift_rel / n for n in nks])
         if icell.dimension <=2:
             shift[2] =  0
         elif icell.dimension == 1:
             shift[1] = 0
-        Nk = np.prod(nk) * 2
+        Nk = np.prod(nks) * 2
         print("Shift is: " + str(shift))
-        shifted_mesh = ikpts + shift
-        combined = np.concatenate((ikpts,shifted_mesh),axis=0)
+        kmesh_shifted = ikpts + shift
+        combined = np.concatenate((ikpts,kmesh_shifted),axis=0)
         print(combined)
 
         mf2 = scf.KHF(icell, combined)
@@ -989,7 +989,7 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
         #Get dm at kpoints in shifted mesh
         dm_shift = d_m[Nk//2:,:,:]
         #K matrix on shifted mesh with potential defined by dm on unshifted mesh
-        _, Kmat = mf2.get_jk(cell=mf2.cell, dm_kpts= dm2, kpts=ikpts, kpts_band = shifted_mesh)
+        _, Kmat = mf2.get_jk(cell=mf2.cell, dm_kpts= dm2, kpts=ikpts, kpts_band = kmesh_shifted)
         E_stagger = -1. / Nk * np.einsum('kij,kji', dm_shift, Kmat)
         E_stagger /= 2
 
@@ -1023,17 +1023,17 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
         #Regular scf calculation
         mfs = scf.KHF(icell, ikpts)
         print(mfs.kernel())
-        nk = get_monkhorst_pack_size(mfs.cell, mfs.kpts)
-        shift = mfs.cell.get_abs_kpts([0.5 / n for n in nk])
-        shifted_mesh = mfs.kpts + shift
+        nks = get_monkhorst_pack_size(mfs.cell, mfs.kpts)
+        shift = mfs.cell.get_abs_kpts([kshift_rel / n for n in nks])
+        kmesh_shifted = mfs.kpts + shift
         #Calculation on shifted mesh
-        mf2 = scf.KHF(icell, shifted_mesh)
+        mf2 = scf.KHF(icell, kmesh_shifted)
         mf2.with_df = df_type(icell, ikpts).build()  # For 2d,1d, df_type cannot be FFTDF
         print(mf2.kernel())
         dm_2 = mf2.make_rdm1()
         #Get K matrix on shifted kpts, dm from unshifted mesh
         _, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = mfs.make_rdm1(), kpts = mfs.kpts, kpts_band = mf2.kpts)
-        Nk = np.prod(nk)
+        Nk = np.prod(nks)
         E_stagger = -1. / Nk * np.einsum('kij,kji', dm_2, Kmat) * 0.5
         E_stagger/=2
 
@@ -1073,15 +1073,15 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
             dm_un = dm_kpts
 
         #Defining size and making shifted mesh
-        nk = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
-        shift = mf2.cell.get_abs_kpts([0.5/n for n in nk])
+        nks = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
+        shift = mf2.cell.get_abs_kpts([kshift_rel/n for n in nks])
         if icell.dimension <=2:
             shift[2] =  0
         elif icell.dimension == 1:
             shift[1] = 0
-        shifted_mesh = mf2.kpts + shift
+        kmesh_shifted = mf2.kpts + shift
         print(mf2.kpts)
-        print(shifted_mesh)
+        print(kmesh_shifted)
 
         print("\n")
         if dm_kpts is None:
@@ -1096,57 +1096,179 @@ def khf_stagger(icell,ikpts, version = "Non_SCF", df_type = None, dm_kpts = None
                 print(' '.join(str(np.real(el)) for el in j))
 
         #Construct the Fock Matrix
-        h1e = get_hcore(mf2, cell = mf2.cell, kpts = shifted_mesh)
-        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh,exxdiv='ewald')
+        h1e = get_hcore(mf2, cell = mf2.cell, kpts = kmesh_shifted)
+        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = kmesh_shifted,exxdiv='ewald')
         #Veff = Jmat - Kmat/2
-        Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = shifted_mesh)
+        Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = kmesh_shifted)
         F_shift = h1e + Veff
-        s1e = get_ovlp(mf2, cell = mf2.cell, kpts = shifted_mesh)
-        mo_energy, mo_coeff = mf2.eig(F_shift, s1e)
-        mo_occ = mf2.get_occ(mo_energy_kpts=mo_energy, mo_coeff_kpts=mo_coeff)
-        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff,mo_occ_kpts = mo_occ)
+        s1e = get_ovlp(mf2, cell = mf2.cell, kpts = kmesh_shifted)
+        mo_energy_shift, mo_coeff_shift = mf2.eig(F_shift, s1e)
+        mo_occ_shift = mf2.get_occ(mo_energy_kpts=mo_energy_shift, mo_coeff_kpts=mo_coeff_shift)
+        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_occ_shift,mo_occ_kpts = mo_occ_shift)
 
 
         if fourinterp:
             # Extract uKpts from each set of kpts
+            
+            E_madelung, E_madelung, uKpts1, qGrid, kGrid = make_ss_inputs(mf2,mf2.kpts,dm_un, mf2.mo_coeff_kpts())
+            E_madelung, E_madelung, uKpts2, qGrid, kGrid = make_ss_inputs(mf2,kmesh_shifted,dm_shift, mo_coeff_shift)
 
-             E_standard, E_madelung, uKpts1, qGrid, kGrid = make_ss_inputs(mf2,mf2.kpts,dm_un, mf2.mo_coeff_kpts())
+            # Set some parameters
+            nkpts = np.prod(nks)
+            nbands = nocc
+            NsCell = mf2.cell.mesh
+            nG = np.prod(NsCell)
+            
+            Lvec_real = mf2.cell.lattice_vectors()
+            L_delta = Lvec_real / NsCell[:, None]
+            dvol = np.abs(np.linalg.det(L_delta))
+
+            # Evaluate wavefunction on all real space grid points
+            # Establishing real space grid (Generalized for arbitary volume defined by 3 vectors)
+            xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+            mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+            rptGrid3D = mesh_idx @ L_delta
+            #   Step 1.4: compute the pair product
+            Lvec_recip = cell.reciprocal_vectors()
+            Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
+            Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
+            Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
+            Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
+            GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
+
+            # aoval = kmf.cell.pbc_eval_gto("GTO
+            SqG = np.zeros((nkpts, nG), dtype=np.float64)
+            print("MEM USAGE IS:", SqG.nbytes)
+            for q in range(nkpts):
+                for k in range(nkpts):
+                    temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+
+                    kpt1 = kGrid[k, :]
+                    qpt = qGrid[q, :]
+                    kpt2 = kpt1 + qpt
+
+                    kpt2_BZ = minimum_image(mf2.cell, kpt2)
+                    idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
+                    if len(idx_kpt2) != 1:
+                        raise TypeError("Cannot locate (k+q) in the kmesh.")
+                    idx_kpt2 = idx_kpt2[0]
+                    kGdiff = kpt2 - kpt2_BZ
 
 
-        #Computing the Staggered mesh energy
-        Nk = np.prod(nk)
-        E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
-        E_stagger/=2
+                    for n in range(nbands):
+                        for m in range(nbands):
+                            u1 = uKpts1[k, n, :]
+                            u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts2[idx_kpt2, m, :]
+                            rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
+                            temp_fft = np.fft.fftn((rho12 * dvol))
+                            # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
+                            temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
-        count_iter = 1
-        ecell = set_cell(mf2)
-        ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
-        prev = 0
-        conv_Madelung = 0
-        while True and icell.dimension !=1:
-            Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
-            print("Iteration number " + str(count_iter))
-            print("Madelung:" + str(Madelung))
-            print("Eta:" + str(ew_eta))
-            if count_iter>1 and abs(Madelung-prev)<1e-8:
-                conv_Madelung = Madelung
-                break
-            if count_iter>30:
-                print("Error. Madelung constant not converged")
-                break
-            ew_eta*=2
-            count_iter+=1
-            prev = Madelung
+                    SqG[q, :] += temp_SqG_k / nkpts
+            #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
+            SqG = SqG - nocc  # remove the zero order approximate nocc
+            assert (np.abs(SqG[0, 0]) < 1e-4)
 
-        nocc = mf2.cell.tot_electrons()//2
-        E_stagger_M = E_stagger + nocc*conv_Madelung
-        print("Non SCF")
-    # Standard Exchange energy
-    Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
-    E_standard = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
-    E_standard /= 2
+            #   Exchange energy can be formulated as
+            #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
+            prefactor_ex = -1 / (8 * np.pi ** 3)
+            bz_dvol = np.abs(np.linalg.det(Lvec_recip)) / nkpts
 
-    return np.real(E_stagger_M), np.real(E_stagger), np.real(E_standard)
+            #   Step 3.1: define the local domain as multiple of BZ
+            Lvec_recip = cell.reciprocal_vectors()
+
+            LsCell_bz_local = N_local * Lvec_recip
+            LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
+
+            #   localizer for the local domain
+            r1 = np.min(LsCell_bz_local_norms) / 2
+            r1_prefactor = 1.0
+            r1 = r1_prefactor * r1
+            from pyscf.pbc.scf import ss_localizers
+            H = lambda q: ss_localizers.localizer_step(q,r1)
+
+            #   reciprocal lattice within the local domain
+            Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
+            Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0], indexing='ij')
+            GptGrid3D_local = np.hstack(
+                (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
+
+            #   location/index of GptGrid3D_local within 'GptGrid3D'
+            idx_GptGrid3D_local = []
+            for Gl in GptGrid3D_local:
+                idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
+                if len(idx_tmp) != 1:
+                    raise TypeError("Cannot locate local G vector in the reciprocal lattice.")
+                else:
+                    idx_GptGrid3D_local.append(idx_tmp[0])
+            idx_GptGrid3D_local = np.array(idx_GptGrid3D_local)
+
+            #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
+            SqG_local = SqG[:, idx_GptGrid3D_local]
+
+            #   Step 3.2: compute the Fourier transform of 1/|q|^2
+            nqG_local = N_local * nks  # lattice size along each dimension in the real-space (equal to q + G size)
+            Lvec_real_local = Lvec_real / N_local  # dual real cell of local domain LsCell_bz_local
+
+            Rx = np.fft.fftfreq(nqG_local[0], d=1 / nqG_local[0])
+            Ry = np.fft.fftfreq(nqG_local[1], d=1 / nqG_local[1])
+            Rz = np.fft.fftfreq(nqG_local[2], d=1 / nqG_local[2])
+            Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
+            RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
+
+            #   Kernel from Fourier Interpolation
+            from scipy.special import sici
+            normR = np.linalg.norm(RptGrid3D_local, axis=1)
+            CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
+            CoulR[normR < 1e-8] = 4 * np.pi * r1
+
+            #   Integral with Fourier Approximation
+            Ex_stagger_fourier = 0.0
+            for iq, qpt in enumerate(qGrid):
+                qG = qpt[None, :] + GptGrid3D_local
+                exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
+                tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
+                tmp = SqG_local[iq, :].T * H(qG) * tmp
+                Ex_stagger_fourier += np.real(np.sum(tmp)) * bz_dvol
+            Ex_stagger_fourier *= 4 * np.pi 
+            return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung)
+
+        else: # regular stagger
+
+            #Computing the Staggered mesh energy
+            Nk = np.prod(nks)
+            E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
+            E_stagger/=2
+
+            count_iter = 1
+            ecell = set_cell(mf2)
+            ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
+            prev = 0
+            conv_Madelung = 0
+            while True and icell.dimension !=1:
+                Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
+                print("Iteration number " + str(count_iter))
+                print("Madelung:" + str(Madelung))
+                print("Eta:" + str(ew_eta))
+                if count_iter>1 and abs(Madelung-prev)<1e-8:
+                    conv_Madelung = Madelung
+                    break
+                if count_iter>30:
+                    print("Error. Madelung constant not converged")
+                    break
+                ew_eta*=2
+                count_iter+=1
+                prev = Madelung
+
+            nocc = mf2.cell.tot_electrons()//2
+            E_stagger_M = E_stagger + nocc*conv_Madelung
+            print("Non SCF")
+        # Standard Exchange energy
+        Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
+        E_madelung = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
+        E_madelung /= 2
+
+        return np.real(E_stagger_M), np.real(E_stagger), np.real(E_madelung)
 
 
 def minimum_image(cell, kpts):
@@ -1347,14 +1469,6 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
     #   Step 4: Compute the correction
 
     ss_correction = 0
-    #   Quadrature with Coulomb kernel
-    for iq, qpt in enumerate(qGrid):
-        qG = qpt[None, :] + GptGrid3D_local
-        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
-        tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
-        ss_correction -= np.sum(tmp) * bz_dvol
-    quad_terms = ss_correction
-
     #   Integral with Fourier Approximation
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGrid3D_local
@@ -1362,12 +1476,23 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
         tmp = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
-    int_terms = ss_correction - quad_terms
-    ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
+    int_terms = ss_correction
     if fourier_only:
         print("Returning integral term with Fourier interpolation only. Please double check that the step localizer is used.")
         return  4*np.pi*int_terms
     
+    #   Quadrature with Coulomb kernel
+    for iq, qpt in enumerate(qGrid):
+        qG = qpt[None, :] + GptGrid3D_local
+        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
+        tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
+        ss_correction -= np.sum(tmp) * bz_dvol
+    quad_terms = ss_correction - int_terms
+
+
+    ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
+    
+
 
     #   Step 5: apply the correction
     e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
