@@ -1288,7 +1288,7 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0,fourier_only=False):
+def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0,fourier_only=False,subtract_nocc=False):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1402,24 +1402,14 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
             SqG[q, :] += temp_SqG_k / nkpts
 
     #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-    SqG = SqG - nocc  # remove the zero order approximate nocc
-    assert (np.abs(SqG[0, 0]) < 1e-4)
+    if subtract_nocc:
+        SqG = SqG - nocc  # remove the zero order approximate nocc
+        assert np.abs(SqG[0, 0]) < 1e-4
 
     #   Exchange energy can be formulated as
     #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
     prefactor_ex = -1 / (8 * np.pi ** 3)
     bz_dvol = np.abs(np.linalg.det(Lvec_recip)) / nkpts
-
-    #   Side Step: double check the validity of SqG by computing the exchange energy
-    # if False:
-    #     CoulG = np.zeros_like(SqG)
-    #     for iq, qpt in enumerate(qGrid):
-    #         qG = qpt[None, :] + GptGrid3D
-    #         norm2_qG = np.sum(qG ** 2, axis=1)
-    #         CoulG[iq, :] = 4 * np.pi / norm2_qG
-    #         CoulG[iq, norm2_qG < 1e-8] = 0
-    #     Ex = prefactor_ex * bz_dvol * np.sum((SqG + nocc) * CoulG)
-    #     print(f'Ex = {Ex} = {e_ex.real}')
 
         #   Step 3: construct Fouier Approximation of S(q+G)h(q+G)
 
@@ -1476,10 +1466,14 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
         tmp = SqG_local[iq, :].T * H(qG) * tmp
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
-    int_terms = ss_correction
+
+
+    int_terms = prefactor_ex*4*np.pi*ss_correction
+    
+    
     if fourier_only:
         print("Returning integral term with Fourier interpolation only. Please double check that the step localizer is used.")
-        return  4*np.pi*int_terms
+        return  np.real(int_terms), 0.0, 0.0, 0.0
     
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
@@ -1487,7 +1481,9 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
         tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
         ss_correction -= np.sum(tmp) * bz_dvol
-    quad_terms = ss_correction - int_terms
+
+
+    quad_terms = prefactor_ex*4*np.pi*(ss_correction) - int_terms
 
 
     ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
@@ -1495,7 +1491,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
 
 
     #   Step 5: apply the correction
-    e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
+    if subtract_nocc:
+        e_ex_ss = np.real(ex_madelung+prefactor_ex * ss_correction)
+    else:
+        e_ex_ss = np.real(ex_standard+prefactor_ex * ss_correction)
+
 
     #   Step 6: Lin's new idea
     e_ex_ss2 = 0
@@ -1504,7 +1504,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_madelung, N_local=7, debug=False, localizer=No
         qG = qpt[None, :] + GptGrid3D_local
         exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
-        tmp = (SqG_local[iq, :].T + nocc) * tmp
+        if subtract_nocc:
+            tmp = (SqG_local[iq, :].T + nocc) * tmp
+        else:
+            tmp = (SqG_local[iq, :].T) * tmp
+
         e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
     e_ex_ss2 = np.real(prefactor_ex * 4 * np.pi * e_ex_ss2)
 
@@ -1809,7 +1813,7 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts,shiftFac=np.zeros(3)):
     rptGrid3D = mesh_idx @ L_delta
     aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
     
-    kshift_abs = mf.cell.reciprocal_vectors()*shiftFac / nk
+    kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
 
     qGrid = minimum_image(kmf.cell, kshift_abs - kpts)
     kGrid = minimum_image(kmf.cell, kpts)

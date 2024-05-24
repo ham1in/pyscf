@@ -20,6 +20,7 @@
 import unittest
 import tempfile
 import numpy as np
+
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
 from pyscf.pbc.scf.subsample_kpts import subsample_kpts
@@ -28,7 +29,7 @@ from pyscf import lib
 import os
 
 cwd = os.getcwd()
-nthreads = 24
+nthreads = 16
 os.environ['OMP_NUM_THREADS'] = str(nthreads)
 os.environ['MKL_NUM_THREADS'] = str(nthreads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(nthreads)
@@ -68,8 +69,7 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell.ke_cutoff = kecut
     cell.max_memory = 1000
     cell.precision = 1e-8
-    cell.lowdim_ft_type = 'analytic_2d_1'
-    cell.dimension = 2
+    cell.dimension = 3
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
@@ -102,8 +102,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.basis = {'H':'gth-szv'}
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
-    cell.dimension = 2
-    cell.lowdim_ft_type = 'analytic_2d_1'
+    cell.dimension = 3 
     cell.ke_cutoff = kecut
     cell.max_memory = 5000
     cell.build()
@@ -114,11 +113,9 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 
 wrap_around = True
 nkx = 4
-kmesh = [nkx, nkx, 1]
+kmesh = [nkx, nkx, nkx]
 cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
-
-cell.lowdim_ft_type = 'analytic_2d_1'
-cell.dimension = 2
+cell.dimension = 3
 
 cell.build()
 
@@ -140,6 +137,8 @@ ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm).real
 
 Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
 
+
+
 Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm) * 0.5
 Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm)
 
@@ -159,6 +158,30 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 
 div_vector = [2,2]
 
-import pyscf.pbc.scf.ss_localizers as ss_localizers
-localizer = lambda q, r1: ss_localizers.localizer_poly_2d(q,r1,d=4) #polynomial localizer of degree 2
-results = subsample_kpts(mf=mf,dim=2,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",wrap_around=wrap_around, ss_localizer=localizer,ss_debug=True,ss_r1_prefactor=1.0)
+nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type)
+
+print('=== Kpoint Subsampling Results === ')
+
+print('\nnk list')
+print(nk_list)
+print('\nnks list')
+print(nks_list)
+print('\nEk list')
+print(Ek_list)
+
+
+
+
+nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf_fourier",df_type=df_type)
+
+
+print('=== Kpoint Subsampling Results (with Stagger) === ')
+
+print('\nnk list')
+print(nk_list)
+print('\nnks list')
+print(nks_list)
+print('\nEk list')
+print(Ek_list)
+
+

@@ -5,7 +5,7 @@ import copy
 
 
 def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-                   wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0):
+                   wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,ss_subtract_nocc=False):
     """
 
     Args:
@@ -27,8 +27,10 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
     """
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell, kpts=mf.kpts)
     nk = np.prod(nks)
-    assert(nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk")
-    assert(dim == mf.cell.dimension, "Dimension must match cell dimension")
+    assert nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk"
+    assert dim == mf.cell.dimension, "Dimension must match cell dimension"
+    # assert(nk / (np.prod(div_vector) ** dim) !=0, "Div vector has more divisions than what is possible.")
+
     # Sanity run
     if mf.cell.output is not None:
         f = open(mf.cell.output, "a")
@@ -90,8 +92,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
         "standard"
     ]
 
-    khf_routines_all.extend(khf_routines_ss).extend(khf_routines_stagger)
-
+    khf_routines_all.extend(khf_routines_ss)
+    khf_routines_all.extend(khf_routines_stagger)
+    
     if khf_routine not in khf_routines_all:
         raise ValueError(f'khf_routine must be one of {khf_routines_all}')
     else:
@@ -140,13 +143,15 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             
             fourier_only = (khf_routine == "fourier")
             if mf.cell.dimension ==3:
-                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_madelung, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only)
+                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, N_local=ss_nlocal, debug=ss_debug,
+                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only,
+                                                subtract_nocc=ss_subtract_nocc)
+                
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
             elif mf.cell.dimension ==2:
                 e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor)
+                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,subtract_nocc=ss_subtract_nocc)
                 
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
@@ -161,12 +166,13 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
         elif khf_routine in khf_routines_stagger:
             from pyscf.pbc.scf.khf import khf_stagger
             stagger_type = stagger_routine_to_type[khf_routine]
-            Ek_stagger_M, Ek_stagger, Ek_standard = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
-                                                                df_type=df_type, dm_kpts=dm_kpts)
+            fourinterp = (khf_routine == "stagger_nonscf_fourier")
+            Ek_stagger_M, Ek_stagger, Ek_madelung = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
+                                                                df_type=df_type, dm_kpts=dm_kpts, fourinterp=fourinterp)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_stagger_list"].append(Ek_stagger_M)
-            results["Ek_list"].append(Ek_standard)
+            results["Ek_list"].append(Ek_madelung)
             results["nk_list"].append(nk_div)
             results["nks_list"].append(copy.copy(nks))
 

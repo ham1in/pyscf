@@ -83,3 +83,7 @@ tmp/
 # IDEs
 .idea/
 .vscode/
+
+#PySCF temp files
+tmp*
+*mat
