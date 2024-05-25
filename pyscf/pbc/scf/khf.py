@@ -1405,6 +1405,8 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     if subtract_nocc:
         SqG = SqG - nocc  # remove the zero order approximate nocc
         assert np.abs(SqG[0, 0]) < 1e-4
+    else: 
+        assert np.abs(SqG[0, 0]) - nocc < 1e-4 
 
     #   Exchange energy can be formulated as
     #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
@@ -1424,7 +1426,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
     #   reciprocal lattice within the local domain
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0], indexing='ij')
+    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
     GptGrid3D_local = np.hstack(
         (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
 
@@ -1465,6 +1467,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
         exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
         tmp = SqG_local[iq, :].T * H(qG) * tmp
+        # tmp = SqG_local[iq, :].T * tmp
         ss_correction += np.real(np.sum(tmp)) * bz_dvol
 
 
@@ -1478,7 +1481,9 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGrid3D_local
-        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
+        # tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
+        tmp = SqG_local[iq, :].T / np.sum(qG ** 2, axis=1)
+
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
         ss_correction -= np.sum(tmp) * bz_dvol
 
@@ -1515,7 +1520,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     return e_ex_ss, e_ex_ss2, int_terms, quad_terms
 
 
-def khf_ss_2d(kmf, nks, uKpts, ex, N_local=5, debug=False, localizer=None, r1_prefactor=1.0):
+def khf_ss_2d(kmf, nks, uKpts, ex, N_local=7, debug=False, localizer=None, r1_prefactor=1.0):
     """
     Perform Singularity Subtraction for Fock Exchange (2D) calculation.
 
@@ -1805,7 +1810,7 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts,shiftFac=np.zeros(3)):
     # Saving the wavefunction data (Strange MKL error just feeding mo_coeff...)
     # mo_coeff_kpts = kmf.mo_coeff_kpts # make input as well
     Lvec_real = kmf.cell.lattice_vectors()
-    NsCell = kmf.cell.mesh
+    NsCell = np.array(kmf.cell.mesh)
     L_delta = Lvec_real / NsCell[:, None]
     dvol = np.abs(np.linalg.det(L_delta))
     xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')

@@ -82,7 +82,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.a = '''
         6.0   0.0   0.0
         0.0   6.0   0.0
-        0.0   0.0   24.0
+        0.0   0.0   6.0
         '''
     # cell.atom='''
     #     H 1.50   1.50   2.10
@@ -106,6 +106,8 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.max_memory = 5000
     cell.build()
     cell.omega = 0
+    cell.mesh = np.array([15,15,15])
+
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
 
@@ -128,6 +130,7 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.precision = 1e-8
     cell.pseudo = 'gth-pbe'
     cell.ke_cutoff = kecut
+    cell.mesh = [15,15,15]
     
     
     
@@ -140,7 +143,9 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=200,wrap_around=wrap_around)
+# cell, kpts= build_diamond_cell(nk=kmesh,kecut=200,wrap_around=wrap_around)
+cell, kpts= build_H2_cell(nk=kmesh,kecut=200,wrap_around=wrap_around)
+
 cell.dimension = 3
 
 cell.build()
@@ -182,4 +187,4 @@ div_vector = [2]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 localizer = lambda q, r1: ss_localizers.localizer_step(q,r1)
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=31,ss_subtract_nocc=False)
+                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=15,ss_subtract_nocc=False,ss_localizer=localizer)
