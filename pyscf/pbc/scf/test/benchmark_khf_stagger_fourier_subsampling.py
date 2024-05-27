@@ -83,7 +83,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.a = '''
         6.0   0.0   0.0
         0.0   6.0   0.0
-        0.0   0.0   24.0
+        0.0   0.0   6.0
         '''
     # cell.atom='''
     #     H 1.50   1.50   2.10
@@ -102,7 +102,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.basis = {'H':'gth-szv'}
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
-    cell.dimension = 3 
+    cell.dimension = 3
     cell.ke_cutoff = kecut
     cell.max_memory = 5000
     cell.build()
@@ -112,17 +112,18 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 
 
 wrap_around = True
-nkx = 4
+nkx = 2
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
+# cell.mesh = np.array([11]*3)
 
 cell.build()
 
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
-df_type = df.GDF
+df_type = df.FFTDF
 mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
@@ -156,32 +157,13 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 # Subsample 8 kpts
 
 
-div_vector = [2,2]
+div_vector = [2]
 
-nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type)
-
-print('=== Kpoint Subsampling Results === ')
-
-print('\nnk list')
-print(nk_list)
-print('\nnks list')
-print(nks_list)
-print('\nEk list')
-print(Ek_list)
-
-
-
-
-nk_list, nks_list, Ej_list, Ek_list = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf_fourier",df_type=df_type)
-
-
-print('=== Kpoint Subsampling Results (with Stagger) === ')
-
-print('\nnk list')
-print(nk_list)
-print('\nnks list')
-print(nks_list)
-print('\nEk list')
-print(Ek_list)
+import pyscf.pbc.scf.ss_localizers as ss_localizers
+localizer = lambda q, r1: ss_localizers.localizer_unity(q,r1)
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type,dm_kpts=dm,
+                         khf_routine="stagger_nonscf_fourier", wrap_around=wrap_around,
+                         ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=11,ss_subtract_nocc=False,
+                         ss_localizer=localizer)
 
 

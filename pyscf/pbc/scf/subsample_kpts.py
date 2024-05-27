@@ -78,23 +78,23 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
     }
     khf_routines_stagger = [
         "stagger_nonscf",
-        "stagger_splitscf"
+        "stagger_splitscf",
         "stagger",
-        "singularity_subtraction"
-        "fourier"
-        "stagger_nonscf_fourier"
+        "singularity_subtraction",
+        "fourier",
+        "stagger_nonscf_fourier",
     ]
     khf_routines_ss = [
         "singularity_subtraction",
-        "fourier"
+        "fourier",
     ]
     khf_routines_all = [
-        "standard"
+        "standard",
     ]
 
     khf_routines_all.extend(khf_routines_ss)
     khf_routines_all.extend(khf_routines_stagger)
-    
+
     if khf_routine not in khf_routines_all:
         raise ValueError(f'khf_routine must be one of {khf_routines_all}')
     else:
@@ -140,19 +140,19 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             mf.exxdiv = None  #so that standard energy is computed without madelung
             E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts_div, dm_kpts=dm_kpts,
                                                            mo_coeff_kpts=mo_coeff_kpts)
-            
+
             fourier_only = (khf_routine == "fourier")
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, N_local=ss_nlocal, debug=ss_debug,
                                                 localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only,
                                                 subtract_nocc=ss_subtract_nocc)
-                
+
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
             elif mf.cell.dimension ==2:
                 e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
                                                 localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,subtract_nocc=ss_subtract_nocc)
-                
+
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
 
@@ -168,7 +168,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             stagger_type = stagger_routine_to_type[khf_routine]
             fourinterp = (khf_routine == "stagger_nonscf_fourier")
             Ek_stagger_M, Ek_stagger, Ek_madelung = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
-                                                                df_type=df_type, dm_kpts=dm_kpts, fourinterp=fourinterp)
+                                                                df_type=df_type, dm_kpts=dm_kpts,
+                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_stagger_list"].append(Ek_stagger_M)
@@ -176,7 +177,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             results["nk_list"].append(nk_div)
             results["nks_list"].append(copy.copy(nks))
 
-        else: # standard exchange 
+        else: # standard exchange
 
             J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
             Ek = -1. / nk_div * np.einsum('kij,kji', dm_kpts, K) * 0.5

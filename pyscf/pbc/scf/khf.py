@@ -859,7 +859,8 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, kshift_rel = 0.5, fourinterp = False,N_local=7):
+def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, mo_coeff_kpts = None, kshift_rel = 0.5, 
+                fourinterp = False, N_local=7):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -964,7 +965,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             df_type = df.FFTDF
 
     if fourinterp:
-        assert(version == "Non-SCF", "Fourier interpolation only available for Non-SCF version")
+        assert version == "Non-SCF", "Fourier interpolation only available for Non-SCF version"
 
     if version == "Regular":
         nks = get_monkhorst_pack_size(icell, ikpts)
@@ -1097,28 +1098,37 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
 
         #Construct the Fock Matrix
         h1e = get_hcore(mf2, cell = mf2.cell, kpts = kmesh_shifted)
-        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = kmesh_shifted,exxdiv='ewald')
+        Jmat, Kmat = mf2.get_jk(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = kmesh_shifted,
+                                exxdiv='ewald')
         #Veff = Jmat - Kmat/2
         Veff = mf2.get_veff(cell = mf2.cell, dm_kpts = dm_un, kpts = mf2.kpts, kpts_band = kmesh_shifted)
         F_shift = h1e + Veff
         s1e = get_ovlp(mf2, cell = mf2.cell, kpts = kmesh_shifted)
         mo_energy_shift, mo_coeff_shift = mf2.eig(F_shift, s1e)
         mo_occ_shift = mf2.get_occ(mo_energy_kpts=mo_energy_shift, mo_coeff_kpts=mo_coeff_shift)
-        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_occ_shift,mo_occ_kpts = mo_occ_shift)
+        dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff_shift,mo_occ_kpts = mo_occ_shift)
 
 
         if fourinterp:
             # Extract uKpts from each set of kpts
-            
-            E_madelung, E_madelung, uKpts1, qGrid, kGrid = make_ss_inputs(mf2,mf2.kpts,dm_un, mf2.mo_coeff_kpts())
-            E_madelung, E_madelung, uKpts2, qGrid, kGrid = make_ss_inputs(mf2,kmesh_shifted,dm_shift, mo_coeff_shift)
+            # Unshifted
+            if mo_coeff_kpts is None:
+                raise RuntimeError("mo_coeff_kpts must be provided for fourier interpolation")
+            # _, E_madelung1, uKpts1, _, kGrid1 = make_ss_inputs(mf2,mf2.kpts,dm_un, mo_coeff_kpts)
+            shiftFac = [0.5]*3
+            # _, _, uKpts2, qGrid, kGrid2 = make_ss_inputs(mf2,kmesh_shifted,dm_shift, mo_coeff_shift,
+                                                                        #   shiftFac=shiftFac)
+            E_standard1, E_madelung1, uKpts1, uKpts2, kGrid1,kGrid2, qGrid = make_ss_inputs_stagger(
+                mf2,kpts_i=ikpts,kpts_j=kmesh_shifted,dm_i=dm_un,dm_j=dm_shift, mo_coeff_i=mo_coeff_kpts,
+                mo_coeff_j=mo_coeff_shift,shiftFac=shiftFac)
 
             # Set some parameters
             nkpts = np.prod(nks)
+            nocc = mf2.cell.tot_electrons() // 2
             nbands = nocc
             NsCell = mf2.cell.mesh
             nG = np.prod(NsCell)
-            
+
             Lvec_real = mf2.cell.lattice_vectors()
             L_delta = Lvec_real / NsCell[:, None]
             dvol = np.abs(np.linalg.det(L_delta))
@@ -1129,7 +1139,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
             rptGrid3D = mesh_idx @ L_delta
             #   Step 1.4: compute the pair product
-            Lvec_recip = cell.reciprocal_vectors()
+            Lvec_recip = icell.reciprocal_vectors()
             Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
             Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
             Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
@@ -1143,12 +1153,12 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
                 for k in range(nkpts):
                     temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
 
-                    kpt1 = kGrid[k, :]
+                    kpt1 = kGrid1[k, :]
                     qpt = qGrid[q, :]
                     kpt2 = kpt1 + qpt
 
                     kpt2_BZ = minimum_image(mf2.cell, kpt2)
-                    idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
+                    idx_kpt2 = np.where(np.sum((kGrid2 - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
                     if len(idx_kpt2) != 1:
                         raise TypeError("Cannot locate (k+q) in the kmesh.")
                     idx_kpt2 = idx_kpt2[0]
@@ -1166,8 +1176,8 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
 
                     SqG[q, :] += temp_SqG_k / nkpts
             #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-            SqG = SqG - nocc  # remove the zero order approximate nocc
-            assert (np.abs(SqG[0, 0]) < 1e-4)
+            # SqG = SqG - nocc  # remove the zero order approximate nocc
+            assert (np.abs(SqG[0, 0])-nocc < 1e-4)
 
             #   Exchange energy can be formulated as
             #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
@@ -1175,7 +1185,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             bz_dvol = np.abs(np.linalg.det(Lvec_recip)) / nkpts
 
             #   Step 3.1: define the local domain as multiple of BZ
-            Lvec_recip = cell.reciprocal_vectors()
+            Lvec_recip = icell.reciprocal_vectors()
 
             LsCell_bz_local = N_local * Lvec_recip
             LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
@@ -1230,8 +1240,8 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
                 tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
                 tmp = SqG_local[iq, :].T * H(qG) * tmp
                 Ex_stagger_fourier += np.real(np.sum(tmp)) * bz_dvol
-            Ex_stagger_fourier *= 4 * np.pi 
-            return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung)
+            Ex_stagger_fourier *= 4*np.pi*prefactor_ex
+            return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
 
         else: # regular stagger
 
@@ -1309,9 +1319,9 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     #Xin's version - using for test/benchmarking
     print("Singularity Subtraction for Fock Exchange (3D) requested")
     from scipy.special import sici
-    
+    import pyscf.pbc.scf.ss_localizers as ss_localizers
+
     if localizer is None:
-        import pyscf.pbc.scf.ss_localizers as ss_localizers
         localizer = lambda q, r1: ss_localizers.localizer_poly(q, r1, 4)
 
     #   basic info
@@ -1365,7 +1375,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     #         exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
     #         uKpts[k, n, :] = np.squeeze(exp_part * utmp)
 
-            #   Step 1.4: compute the pair product
+    #   Step 1.4: compute the pair product
     Lvec_recip = cell.reciprocal_vectors()
     Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
     Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
@@ -1402,11 +1412,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
             SqG[q, :] += temp_SqG_k / nkpts
 
     #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-    if subtract_nocc:
-        SqG = SqG - nocc  # remove the zero order approximate nocc
-        assert np.abs(SqG[0, 0]) < 1e-4
-    else: 
-        assert np.abs(SqG[0, 0]) - nocc < 1e-4 
+    # if subtract_nocc:
+    #     SqG = SqG - nocc  # remove the zero order approximate nocc
+    #     assert np.abs(SqG[0, 0]) < 1e-4
+    # else:
+    #     assert np.abs(SqG[0, 0]) - nocc < 1e-4 
 
     #   Exchange energy can be formulated as
     #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
@@ -1453,7 +1463,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
     RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
 
-      #   Kernel from Fourier Interpolation
+    #   Kernel from Fourier Interpolation
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
     CoulR[normR < 1e-8] = 4 * np.pi * r1
@@ -1467,33 +1477,25 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
         exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
         tmp = SqG_local[iq, :].T * H(qG) * tmp
-        # tmp = SqG_local[iq, :].T * tmp
-        ss_correction += np.real(np.sum(tmp)) * bz_dvol
+        ss_correction += np.real(np.sum(tmp))
 
+    int_terms = bz_dvol * prefactor_ex*4*np.pi*ss_correction
 
-    int_terms = prefactor_ex*4*np.pi*ss_correction
-    
-    
     if fourier_only:
         print("Returning integral term with Fourier interpolation only. Please double check that the step localizer is used.")
-        return  np.real(int_terms), 0.0, 0.0, 0.0
-    
+        return np.real(int_terms), 0.0, 0.0, 0.0
+
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGrid3D_local
-        # tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
-        tmp = SqG_local[iq, :].T / np.sum(qG ** 2, axis=1)
+        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
 
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
-        ss_correction -= np.sum(tmp) * bz_dvol
+        ss_correction -= np.sum(tmp)
 
 
-    quad_terms = prefactor_ex*4*np.pi*(ss_correction) - int_terms
-
-
-    ss_correction = 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
-    
-
+    quad_terms = bz_dvol*prefactor_ex*4*np.pi*(ss_correction) - int_terms
+    ss_correction = bz_dvol* 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
 
     #   Step 5: apply the correction
     if subtract_nocc:
@@ -1794,14 +1796,15 @@ def khf_ss_2d(kmf, nks, uKpts, ex, N_local=7, debug=False, localizer=None, r1_pr
 
 
 
-def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts,shiftFac=np.zeros(3)):
+def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
     Madelung = madelung(kmf.cell, kpts)
     nocc = kmf.cell.tot_electrons() // 2
     nk = get_monkhorst_pack_size(kmf.cell, kpts)
     Nk = np.prod(nk)
     # dm_kpts = kmf.make_rdm1() ## make input
-    _, K = kmf.get_jk(cell=kmf.cell, dm_kpts=dm_kpts, kpts=kpts, kpts_band=kpts)
+    kmf.exxdiv = None
+    _, K = kmf.get_jk(cell=kmf.cell, dm_kpts=dm_kpts, kpts=kpts, kpts_band=kpts,exxdiv=None)
     E_standard = -1. / Nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
     E_standard /= 2
     E_madelung = E_standard - nocc * Madelung
@@ -1817,7 +1820,7 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts,shiftFac=np.zeros(3)):
     mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
     rptGrid3D = mesh_idx @ L_delta
     aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
-    
+    shiftFac=np.zeros(3)
     kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
 
     qGrid = minimum_image(kmf.cell, kshift_abs - kpts)
@@ -1832,6 +1835,58 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts,shiftFac=np.zeros(3)):
             exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
             uKpts[k, n, :] = np.squeeze(exp_part * utmp)
     return np.real(E_standard), np.real(E_madelung), uKpts, qGrid, kGrid
+
+
+def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,shiftFac=np.zeros(3)):
+    from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
+    Madelung = madelung(kmf.cell, kpts_i)
+    nocc = kmf.cell.tot_electrons() // 2
+    nk = get_monkhorst_pack_size(kmf.cell, kpts_i)
+    Nk = np.prod(nk)
+    # dm_kpts = kmf.make_rdm1() ## make input
+    kmf.exxdiv = None
+    _, K = kmf.get_jk(cell=kmf.cell, dm_kpts=dm_i, kpts=kpts_i, kpts_band=kpts_i,exxdiv=None)
+    E_standard = -1. / Nk * np.einsum('kij,kji', dm_i, K) * 0.5
+    E_standard /= 2
+    E_madelung = E_standard - nocc * Madelung
+    print('E_madelung at kpts_i is ',E_madelung)
+
+    # Saving the wavefunction data (Strange MKL error just feeding mo_coeff...)
+    # mo_coeff_kpts = kmf.mo_coeff_kpts # make input as well
+    Lvec_real = kmf.cell.lattice_vectors()
+    NsCell = np.array(kmf.cell.mesh)
+    L_delta = Lvec_real / NsCell[:, None]
+    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+    rptGrid3D = mesh_idx @ L_delta
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts_i)
+    kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
+
+    qGrid = minimum_image(kmf.cell, kshift_abs - kpts_i)
+    kGrid1 = minimum_image(kmf.cell, kpts_i)
+    kGrid2 = minimum_image(kmf.cell, kpts_j)
+    assert minimum_image(kmf.cell,kGrid2[0]-kGrid1[0]) in qGrid
+
+    nbands = nocc
+    nG = np.prod(NsCell)
+    # i orbitals
+    uKpts1 = np.zeros((Nk, nbands, nG), dtype=complex)
+    for k in range(Nk):
+        for n in range(nbands):
+            utmp = aoval[k] @ np.reshape(mo_coeff_i[k][:, n], (-1, 1))
+            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid1[k], (-1, 1))))
+            uKpts1[k, n, :] = np.squeeze(exp_part * utmp)
+
+    # j orbitals
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts_j)
+    uKpts2 = np.zeros((Nk, nbands, nG), dtype=complex)
+    for k in range(Nk):
+        for n in range(nbands):
+            utmp = aoval[k] @ np.reshape(mo_coeff_j[k][:, n], (-1, 1))
+            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid2[k], (-1, 1))))
+            uKpts2[k, n, :] = np.squeeze(exp_part * utmp)
+
+    return np.real(E_standard), np.real(E_madelung), uKpts1, uKpts2, kGrid1,kGrid2, qGrid
 
 if __name__ == '__main__':
     from pyscf.pbc import gto

@@ -101,12 +101,11 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.basis = {'H':'gth-szv'}
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
-    cell.dimension = 3 
-    cell.ke_cutoff = kecut
+    cell.dimension = 3
+    # cell.ke_cutoff = kecut
     cell.max_memory = 5000
     cell.build()
     cell.omega = 0
-    cell.mesh = np.array([15,15,15])
 
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
@@ -121,7 +120,7 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.a = '''
          0.0 3.370326545430162 3.370326545430162
          3.370326545430162 0.0 3.370326545430162
-         3.370326545430162 3.370326545430162 0.0  
+         3.370326545430162 3.370326545430162 0.0
         '''
     cell.verbose = 7
     cell.spin = 0
@@ -129,15 +128,13 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.basis = 'gth-szv'
     cell.precision = 1e-8
     cell.pseudo = 'gth-pbe'
-    cell.ke_cutoff = kecut
-    cell.mesh = [15,15,15]
-    
-    
-    
+    # cell.ke_cutoff = kecut
+    cell.mesh = np.array([5,5,5])
+
     cell.max_memory = 1000
 
     cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
 
 wrap_around = True
@@ -145,9 +142,8 @@ nkx = 2
 kmesh = [nkx, nkx, nkx]
 # cell, kpts= build_diamond_cell(nk=kmesh,kecut=200,wrap_around=wrap_around)
 cell, kpts= build_H2_cell(nk=kmesh,kecut=200,wrap_around=wrap_around)
-
 cell.dimension = 3
-
+# cell.mesh = np.array([5]*3)
 cell.build()
 
 print('Kmesh:', kmesh)
@@ -185,6 +181,8 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 div_vector = [2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
-localizer = lambda q, r1: ss_localizers.localizer_step(q,r1)
-results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=15,ss_subtract_nocc=False,ss_localizer=localizer)
+localizer = lambda q, r1: ss_localizers.localizer_unity(q,r1)
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type,dm_kpts=dm,
+                         khf_routine="fourier", wrap_around=wrap_around,
+                         ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=9,ss_subtract_nocc=False,
+                         ss_localizer=localizer)

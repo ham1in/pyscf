@@ -11,6 +11,13 @@ def localizer_step(x,r1):
         val = 0
     return val
 
+def localizer_unity(x,r1):
+    # x = np.asarray(x)
+    # x = x / r1
+    # r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
+    val = np.ones(shape=x.shape[0])
+    return val
+
 def localizer_poly(x, r1, d):
     x = np.asarray(x)
     x = x / r1
