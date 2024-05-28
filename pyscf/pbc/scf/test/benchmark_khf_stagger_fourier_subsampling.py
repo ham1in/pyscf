@@ -109,21 +109,48 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
+def build_lih_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+ H 3.7949160936 3.7949160936 3.7949160936
+ Li 0.0 0.0 0.0
+        '''
+
+              
+    cell.a = '''
+0.0000000000    3.7949160936    3.7949160936
+ 3.7949160936    0.0000000000    3.7949160936
+ 3.7949160936    3.7949160936    0.0000000000 
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
 
 
 wrap_around = True
-nkx = 2
+nkx = 4
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_lih_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
 # cell.mesh = np.array([11]*3)
+cell.max_memory = 240000
 
 cell.build()
 
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
-df_type = df.FFTDF
+df_type = df.GDF
 mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)

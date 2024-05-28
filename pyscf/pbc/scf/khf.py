@@ -1865,7 +1865,7 @@ def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,sh
     qGrid = minimum_image(kmf.cell, kshift_abs - kpts_i)
     kGrid1 = minimum_image(kmf.cell, kpts_i)
     kGrid2 = minimum_image(kmf.cell, kpts_j)
-    assert minimum_image(kmf.cell,kGrid2[0]-kGrid1[0]) in qGrid
+    assert np.round(minimum_image(kmf.cell,kGrid2[0]-kGrid1[0]),8) in np.round(qGrid,8)
 
     nbands = nocc
     nG = np.prod(NsCell)
