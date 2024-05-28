@@ -1116,8 +1116,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
                 raise RuntimeError("mo_coeff_kpts must be provided for fourier interpolation")
             # _, E_madelung1, uKpts1, _, kGrid1 = make_ss_inputs(mf2,mf2.kpts,dm_un, mo_coeff_kpts)
             shiftFac = [0.5]*3
-            # _, _, uKpts2, qGrid, kGrid2 = make_ss_inputs(mf2,kmesh_shifted,dm_shift, mo_coeff_shift,
-                                                                        #   shiftFac=shiftFac)
+            # _, _, uKpts2, qGrid, kGrid2 = make_ss_inputs(mf2,kmesh_shifted,dm_shift, mo_coeff_shift,   shiftFac=shiftFac)
             E_standard1, E_madelung1, uKpts1, uKpts2, kGrid1,kGrid2, qGrid = make_ss_inputs_stagger(
                 mf2,kpts_i=ikpts,kpts_j=kmesh_shifted,dm_i=dm_un,dm_j=dm_shift, mo_coeff_i=mo_coeff_kpts,
                 mo_coeff_j=mo_coeff_shift,shiftFac=shiftFac)
@@ -1199,7 +1198,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
 
             #   reciprocal lattice within the local domain
             Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-            Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, [0], indexing='ij')
+            Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
             GptGrid3D_local = np.hstack(
                 (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
 
@@ -1859,12 +1858,14 @@ def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,sh
     xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
     mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
     rptGrid3D = mesh_idx @ L_delta
-    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts_i)
-    kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
 
-    qGrid = minimum_image(kmf.cell, kshift_abs - kpts_i)
     kGrid1 = minimum_image(kmf.cell, kpts_i)
     kGrid2 = minimum_image(kmf.cell, kpts_j)
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kGrid1)
+
+    kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
+    qGrid = minimum_image(kmf.cell, kshift_abs - kpts_i)
+
     assert np.round(minimum_image(kmf.cell,kGrid2[0]-kGrid1[0]),8) in np.round(qGrid,8)
 
     nbands = nocc
@@ -1878,7 +1879,7 @@ def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,sh
             uKpts1[k, n, :] = np.squeeze(exp_part * utmp)
 
     # j orbitals
-    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts_j)
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kGrid2)
     uKpts2 = np.zeros((Nk, nbands, nG), dtype=complex)
     for k in range(Nk):
         for n in range(nbands):

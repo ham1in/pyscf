@@ -109,6 +109,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
+
 def build_lih_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -117,7 +118,6 @@ def build_lih_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True
  Li 0.0 0.0 0.0
         '''
 
-              
     cell.a = '''
 0.0000000000    3.7949160936    3.7949160936
  3.7949160936    0.0000000000    3.7949160936
@@ -138,7 +138,7 @@ def build_lih_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True
 
 
 wrap_around = True
-nkx = 4
+nkx = 2
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_lih_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
@@ -190,7 +190,7 @@ import pyscf.pbc.scf.ss_localizers as ss_localizers
 localizer = lambda q, r1: ss_localizers.localizer_unity(q,r1)
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type,dm_kpts=dm,
                          khf_routine="stagger_nonscf_fourier", wrap_around=wrap_around,
-                         ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=11,ss_subtract_nocc=False,
+                         ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=15,ss_subtract_nocc=False,
                          ss_localizer=localizer)
 
 
