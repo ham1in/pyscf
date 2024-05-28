@@ -859,8 +859,8 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, mo_coeff_kpts = None, kshift_rel = 0.5, 
-                fourinterp = False, N_local=7):
+def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, mo_coeff_kpts = None, 
+                kshift_rel = 0.5, fourinterp = False, N_local=7):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...

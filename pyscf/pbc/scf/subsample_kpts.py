@@ -5,7 +5,8 @@ import copy
 
 
 def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-                   wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,ss_subtract_nocc=False):
+                   wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
+                   ss_subtract_nocc=False):
     """
 
     Args:
@@ -151,7 +152,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
 
             elif mf.cell.dimension ==2:
                 e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,subtract_nocc=ss_subtract_nocc)
+                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,
+                                                subtract_nocc=ss_subtract_nocc)
 
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ', e_ss, file=f)
@@ -169,7 +171,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             fourinterp = (khf_routine == "stagger_nonscf_fourier")
             Ek_stagger_M, Ek_stagger, Ek_madelung = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
                                                                 df_type=df_type, dm_kpts=dm_kpts,
-                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp)
+                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp,
+                                                                N_local=ss_nlocal)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_stagger_list"].append(Ek_stagger_M)

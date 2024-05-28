@@ -101,7 +101,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.basis = {'H':'gth-szv'}
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
-    cell.dimension = 3 
+    cell.dimension = 3
     cell.ke_cutoff = kecut
     cell.max_memory = 5000
     cell.build()
@@ -152,7 +152,7 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 
 div_vector = [2]
 
-# import pyscf.pbc.scf.ss_localizers as ss_localizers
-# localizer = lambda q, r1: ss_localizers.localizer_poly_3d(q,r1,d=4) #polynomial localizer of degree 4
+import pyscf.pbc.scf.ss_localizers as ss_localizers
+localizer = lambda q, r1: ss_localizers.localizer_poly_3d(q,r1,d=4) #polynomial localizer of degree 4
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0)
+                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=19)
