@@ -2010,7 +2010,6 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
 
     from scipy.integrate import quad, nquad
     import cubature
-    from joblib import Parallel, delayed
 
     VR = np.zeros(Ggrid_3d.shape[0])
     global_tol = 1e-7
@@ -2048,7 +2047,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
 
         else:
             raise NotImplementedError("Symmetry not yet implemented for non-h case")
-            VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_non_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
+            # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_non_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
 
         for k in range(Ggrid_3d_unique.shape[0]):
             if k == zero_index:
@@ -2062,15 +2061,15 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
         raise NotImplementedError("Symmetry not yet implemented for non-symmetry case")
         
 
-        def compute_integrals(j):
-            integral_sph = nquad(lambda q, theta, phi: integrand_sph_handle(q, theta, phi, Ggrid_3d[j, :], gamma), 
-                                [[0, Q], [0, np.pi], [0, 2*np.pi]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
-            integral_cart = nquad(lambda x, y, z: integrand_cart_handle(x, y, z, Ggrid_3d[j, :], gamma), 
-                                [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
-            return integral_sph + integral_cart
-
-        VR = Parallel(n_jobs=-1)(delayed(compute_integrals)(j) for j in range(Ggrid_3d.shape[0]))
-
+        # def compute_integrals(j):
+        #     integral_sph = nquad(lambda q, theta, phi: integrand_sph_handle(q, theta, phi, Ggrid_3d[j, :], gamma),
+        #                         [[0, Q], [0, np.pi], [0, 2*np.pi]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+        #     integral_cart = nquad(lambda x, y, z: integrand_cart_handle(x, y, z, Ggrid_3d[j, :], gamma),
+        #                         [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+        #     return integral_sph + integral_cart
+        #
+        # VR = Parallel(n_jobs=-1)(delayed(compute_integrals)(j) for j in range(Ggrid_3d.shape[0]))
+        #
 
 
 
