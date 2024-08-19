@@ -2008,7 +2008,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
     
 
     from scipy.integrate import quad, nquad
-    import cubature
+    from cubature import cubature
 
     VR = np.zeros(Ggrid_3d.shape[0])
     global_tol = 1e-7
@@ -2032,8 +2032,12 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
         
         def compute_integrals_h(k):
             integral_sph = quad(lambda q: integrand_sph_h_handle(q, Ggrid_3d_unique[k, :]), 0, r1_h, epsabs=global_tol, epsrel=global_tol)[0]
-            integral_cart = nquad(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]), 
-                                [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+            # integral_cart = nquad(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]), 
+            #                     [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+
+
+            # Use cubature instead of nquad for the cartesian integral
+            integral_cart = cubature(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]),[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol)[0]
             return integral_sph + integral_cart
 
         if use_h:
