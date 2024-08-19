@@ -1971,10 +1971,9 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
 
     integration_prism = N_local * reciprocal_vectors
 
-
-    x_min = 0, x_max = 1
-    y_min = 0, y_max = 1
-    z_min = 0, z_max = 1
+    x_min, x_max = 0, 1
+    y_min, y_max = 0, 1
+    z_min, z_max = 0, 1
 
 
     def integrand_sph_h(q, h_r, R):
