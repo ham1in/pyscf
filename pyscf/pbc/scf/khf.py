@@ -1429,7 +1429,27 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
 
     #   localizer for the local domain
-    r1 = np.min(LsCell_bz_local_norms) / 2
+    #r1 = np.min(LsCell_bz_local_norms) / 2
+    # Determine R1 by finding minimum distance to the boundary
+
+
+    # make function determining distance from point to a plane containing the origin
+    def dist_to_plane(point, normal):
+        return np.abs(np.dot(point, normal) / np.linalg.norm(normal))
+    
+    # Query point is the center of the parallelipid
+    query_point = Lvec_recip.sum(axis=0) / 2    
+
+    # For each unique pair of reciprocal vectors, find distance from the query point to the plane containing the origin
+    distances = []
+    for i in range(3):
+        for j in range(i+1, 3):
+            distances.append(dist_to_plane(query_point, np.cross(Lvec_recip[i], Lvec_recip[j])))
+
+    # Find the minimum distance
+    r1 = np.min(distances)
+
+
     H = lambda q: localizer(q,r1_prefactor * r1)
 
     #   reciprocal lattice within the local domain
