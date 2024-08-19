@@ -1889,7 +1889,7 @@ def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,sh
 
     return np.real(E_standard), np.real(E_madelung), uKpts1, uKpts2, kGrid1,kGrid2, qGrid
 
-def fourier_integration_3d(nk,reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,Ggrid_3d):
+def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,Ggrid_3d):
     # Create a coulomb kernel integrand that work well with cubature.
     # Essentially, the bounds for cubature should be [0,1]^3
  
@@ -1953,6 +1953,7 @@ def fourier_integration_3d(nk,reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmu
     
 
     from scipy.integrate import quad, nquad
+    import cubature
     from joblib import Parallel, delayed
 
     VR = np.zeros(Ggrid_3d.shape[0])
@@ -1981,16 +1982,16 @@ def fourier_integration_3d(nk,reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmu
                                 [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
             return integral_sph + integral_cart
 
-        def compute_integrals_non_h(k):
-            integral_sph = nquad(lambda q, theta, phi: integrand_sph_handle(q, theta, phi, Ggrid_3d_unique[k, :], gamma), 
-                                [[0, Q], [0, np.pi], [0, 2*np.pi]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
-            integral_cart = nquad(lambda x, y, z: integrand_cart_handle(x, y, z, Ggrid_3d_unique[k, :], gamma), 
-                                [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
-            return integral_sph + integral_cart
-
         if use_h:
-            VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
+            # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
+            for p0,p1 in lib.prange(0,Ggrid_3d_unique.shape[0]):
+                VR_unique[p0] = compute_integrals_h(p0)
+
+
+
+
         else:
+            raise NotImplementedError("Symmetry not yet implemented for non-h case")
             VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_non_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
 
         for k in range(Ggrid_3d_unique.shape[0]):
@@ -2001,8 +2002,10 @@ def fourier_integration_3d(nk,reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmu
 
     else:
 
-        # raise not yet implemented error
+        # throw not yet implemented error
+        raise NotImplementedError("Symmetry not yet implemented for non-symmetry case")
         
+
         def compute_integrals(j):
             integral_sph = nquad(lambda q, theta, phi: integrand_sph_handle(q, theta, phi, Ggrid_3d[j, :], gamma), 
                                 [[0, Q], [0, np.pi], [0, 2*np.pi]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
