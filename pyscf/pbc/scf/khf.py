@@ -1297,7 +1297,7 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0,fourier_only=False,subtract_nocc=False):
+def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0,fourier_only=False,subtract_nocc=False,full_domain=True):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1430,8 +1430,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
     #   localizer for the local domain
     r1 = np.min(LsCell_bz_local_norms) / 2
-    r1 = r1_prefactor * r1
-    H = lambda q: localizer(q,r1)
+    H = lambda q: localizer(q,r1_prefactor * r1)
 
     #   reciprocal lattice within the local domain
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
@@ -1464,8 +1463,45 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
     #   Kernel from Fourier Interpolation
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
-    CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
-    CoulR[normR < 1e-8] = 4 * np.pi * r1
+    cart_sphr_split = True
+    if full_domain:
+        from scipy.optimize import root_scalar
+
+        # Define r1_h and bounds
+        r1_h = r1
+        # xbounds = LsCell_bzlocal[0] * np.array([-1/2, 1/2])
+        # ybounds = LsCell_bzlocal[1] * np.array([-1/2, 1/2])
+        # zbounds = LsCell_bzlocal[2] * np.array([-1/2, 1/2])
+
+        # Find the closest boundary
+        # min_dir = 0  # Python uses 0-based indexing
+
+        if cart_sphr_split:
+            h_tol = 5e-8  # the Gaussian reaches this value at the closest boundary
+            unit_vec = np.array([1, 0, 0])
+
+            # Define the zetafunc
+            from ss_localizers import localizer_gauss
+            zetafunc = lambda zeta: localizer_gauss(unit_vec, r1, zeta)- h_tol
+            
+            # Solve for zeta_tol using root finding (equivalent of fzero in MATLAB)
+            result = root_scalar(zetafunc, bracket=[0.1, 10])  # Adjust bracket range if needed
+            if result.converged:
+                zeta_tol = result.root
+                rmult = 1 / zeta_tol
+            else:
+                raise ValueError("Root finding for zetafunc did not converge")
+
+            # Call the Fourier integration function
+            CoulR = fourier_integration_3d(Lvec_recip,N_local, r1_h, True, True, rmult, RptGrid3D_local)
+
+        else:
+            raise NotImplementedError("Must use cart-sph split")
+            CoulR = fourier_integration_3d(N, xbounds, ybounds, zbounds, r1_h, True, False, np.nan, RptGrid_Fourier)
+
+    else:   
+        CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
+        CoulR[normR < 1e-8] = 4 * np.pi * r1
 
     #   Step 4: Compute the correction
 
