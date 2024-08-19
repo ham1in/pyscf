@@ -1889,6 +1889,133 @@ def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,sh
 
     return np.real(E_standard), np.real(E_madelung), uKpts1, uKpts2, kGrid1,kGrid2, qGrid
 
+def fourier_integration_3d(nk,reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,Ggrid_3d):
+    # Create a coulomb kernel integrand that work well with cubature.
+    # Essentially, the bounds for cubature should be [0,1]^3
+ 
+    from pyscf import lib   
+
+    def localizer_gauss_sph_bounded(x, y, z, r1, rmax):
+        r = np.sqrt(x**2 + y**2 + z**2)  # Compute the radius
+        val = np.exp(-4 * r**2 / (r1**2))  # Gaussian function
+        val[r > rmax] = 0  # Set values to 0 where r > rmax
+        return val
+    
+    def localizer_gauss_sph_bounded_r(r, r1, rmax):
+        val = np.exp(-4 * r**2 / (r1**2))  # Gaussian function
+        val[r > rmax] = 0  # Set values to 0 where r > rmax
+        return val
+        
+    h_r = lambda q: localizer_gauss_sph_bounded_r(q, rmult * r1_h, r1_h)
+    h_xyz = lambda x, y, z: localizer_gauss_sph_bounded(x, y, z, rmult * r1_h, r1_h)
+
+
+
+
+
+    integration_prism = N_local * reciprocal_vectors
+
+
+    x_min = 0, x_max = 1
+    y_min = 0, y_max = 1
+    z_min = 0, z_max = 1
+
+
+    def integrand_sph_h(q, h_r, R):
+        normR = np.linalg.norm(R)
+        if normR < 1e-12:
+            out = 4 * np.pi * h_r(q)
+        else:
+            out = 4 * np.pi * np.sin(q * normR) / (q * normR) * h_r(q)
+            out[q < 1e-12 | normR < 1e-12] = 4 * np.pi * h_r(0)
+        return out
+
+
+    def integrand_cart_h(x, y, z, R, h_xyz,gamma=0):
+        R_dot_q = R[0]*x + R[1]*y + R[2]*z
+        out = (1 - h_xyz(x, y, z)) * np.exp(-1j * R_dot_q) / (x**2 + y**2 + z**2)
+        
+        # Handle special case when x, y, and z are very small
+        mask = (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12)
+        out[mask] = gamma  # gaussian case
+        
+        return out
+
+
+    # integrand_scaled = lambda x,y,z,reciprocal_vectors: 
+
+
+    integrand_sph_h_handle = lambda q,R: integrand_sph_h(q,h_r,R)
+    integrand_cart_h_handle =  lambda x,y,z,R: integrand_cart_h(x*integration_prism[0],
+                                                                y*integration_prism[1],
+                                                                z*integration_prism[2],
+                                                                R,h_xyz) 
+    
+
+    from scipy.integrate import quad, nquad
+    from joblib import Parallel, delayed
+
+    VR = np.zeros(Ggrid_3d.shape[0])
+    global_tol = 1e-7
+
+    if use_symm:
+        # Find only positive octant of Ggrid_3d
+        Ggrid_3d_unique = Ggrid_3d[(Ggrid_3d[:, 0] >= 0) & (Ggrid_3d[:, 1] >= 0) & (Ggrid_3d[:, 2] >= 0)]
+
+        # For each point in the positive octant, find the corresponding point in all other octants in Ggrid_3d
+        equivalent_indices = [None] * Ggrid_3d_unique.shape[0]
+        zero_index = 0
+        
+        for k in range(Ggrid_3d_unique.shape[0]):
+            G = Ggrid_3d_unique[k, :]
+            hits = np.where((G[0] == np.abs(Ggrid_3d[:, 0])) & 
+                            (G[1] == np.abs(Ggrid_3d[:, 1])) & 
+                            (G[2] == np.abs(Ggrid_3d[:, 2])))[0]
+            equivalent_indices[k] = hits
+                                                                                                                                                                                                                          
+        VR_unique = np.zeros(Ggrid_3d_unique.shape[0])
+        
+        def compute_integrals_h(k):
+            integral_sph = quad(lambda q: integrand_sph_h_handle(q, Ggrid_3d_unique[k, :]), 0, r1_h, epsabs=global_tol, epsrel=global_tol)[0]
+            integral_cart = nquad(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]), 
+                                [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+            return integral_sph + integral_cart
+
+        def compute_integrals_non_h(k):
+            integral_sph = nquad(lambda q, theta, phi: integrand_sph_handle(q, theta, phi, Ggrid_3d_unique[k, :], gamma), 
+                                [[0, Q], [0, np.pi], [0, 2*np.pi]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+            integral_cart = nquad(lambda x, y, z: integrand_cart_handle(x, y, z, Ggrid_3d_unique[k, :], gamma), 
+                                [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+            return integral_sph + integral_cart
+
+        if use_h:
+            VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
+        else:
+            VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_non_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
+
+        for k in range(Ggrid_3d_unique.shape[0]):
+            if k == zero_index:
+                VR[k] = VR_unique[k]
+            else:
+                VR[equivalent_indices[k]] = VR_unique[k]
+
+    else:
+
+        # raise not yet implemented error
+        
+        def compute_integrals(j):
+            integral_sph = nquad(lambda q, theta, phi: integrand_sph_handle(q, theta, phi, Ggrid_3d[j, :], gamma), 
+                                [[0, Q], [0, np.pi], [0, 2*np.pi]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+            integral_cart = nquad(lambda x, y, z: integrand_cart_handle(x, y, z, Ggrid_3d[j, :], gamma), 
+                                [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol})[0]
+            return integral_sph + integral_cart
+
+        VR = Parallel(n_jobs=-1)(delayed(compute_integrals)(j) for j in range(Ggrid_3d.shape[0]))
+
+
+
+
+
 if __name__ == '__main__':
     from pyscf.pbc import gto
     cell = gto.Cell()
