@@ -82,7 +82,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.a = '''
         6.0   0.0   0.0
         0.0   6.0   0.0
-        0.0   0.0   24.0
+        0.0   0.0   6.0
         '''
     # cell.atom='''
     #     H 1.50   1.50   2.10

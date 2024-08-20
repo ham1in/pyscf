@@ -1980,10 +1980,11 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
 
 
     integration_prism = N_local * reciprocal_vectors
-
-    x_min, x_max = 0, 1
-    y_min, y_max = 0, 1
-    z_min, z_max = 0, 1
+    # integration_start_point = -1./2. *np.sum(N_local * reciprocal_vectors,axis=0).T
+    integration_start_point = np.zeros((3,1),)
+    x_min, x_max = -0.5, 0.5
+    y_min, y_max =  -0.5, 0.5
+    z_min, z_max = -0.5, 0.5
 
 
     def integrand_sph_h(q, h_r, R):
@@ -2024,7 +2025,8 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
     #                                                             z*integration_prism[2],
     #                                                             R,h_xyz)
     def integrand_cart_h_handle(x,y,z,R):
-        q = integration_prism.T @ [x,y,z]
+        q = integration_prism.T @ [x,y,z] + integration_start_point
+
         return integrand_cart_h(q[0],q[1],q[2],R,h_xyz)
 
 
@@ -2071,10 +2073,10 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
             # for p0,p1 in lib.prange(0,Ggrid_3d_unique.shape[0],1):
             # for p0 in range(Ggrid_3d_unique.shape[0]):
             import pymp,os
-            with pymp.Parallel(os.cpu_count()) as p:
-                for p0 in p.range(Ggrid_3d_unique.shape[0]):
-                    print('Computing VR_unique at element', p0)
-                    VR_unique[p0] = compute_integrals_h(p0)
+            # with pymp.Parallel(os.cpu_count()) as p:
+            for p0 in range(Ggrid_3d_unique.shape[0]):
+                print('Computing VR_unique at element', p0)
+                VR_unique[p0] = compute_integrals_h(p0)
         else:
             raise NotImplementedError("Symmetry not yet implemented for non-h case")
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_non_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
