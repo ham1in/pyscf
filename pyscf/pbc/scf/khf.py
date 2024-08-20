@@ -1450,7 +1450,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     r1 = np.min(distances)
 
 
-    H = lambda q: localizer(q,r1_prefactor * r1)
+    
 
     #   reciprocal lattice within the local domain
     Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
@@ -1525,6 +1525,8 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
         CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
         CoulR[normR < 1e-8] = 4 * np.pi * r1
 
+
+    H = lambda q: localizer(q,r1_prefactor * r1)
     #   Step 4: Compute the correction
 
     ss_correction = 0
@@ -1998,7 +2000,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
                     out = 4 * np.pi * h_r(0)
             else:
                 out[q < 1e-12 | normR < 1e-12] = 4 * np.pi * h_r(0)
-        return np.real(out)
+        return out
 
 
     def integrand_cart_h(x, y, z, R, h_xyz,gamma=0):
@@ -2013,7 +2015,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
             mask = (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12)
             out[mask] = gamma  # gaussian case
 
-        return np.real(out)
+        return out
 
 
     # integrand_scaled = lambda x,y,z,reciprocal_vectors: 
