@@ -2041,7 +2041,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
         # For each point in the positive octant, find the corresponding point in all other octants in Ggrid_3d
         equivalent_indices = [None] * Ggrid_3d_unique.shape[0]
         zero_index = 0
-        
+
         for k in range(Ggrid_3d_unique.shape[0]):
             G = Ggrid_3d_unique[k, :]
             hits = np.where((G[0] == np.abs(Ggrid_3d[:, 0])) & 
@@ -2064,9 +2064,12 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
         if use_h:
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
             # for p0,p1 in lib.prange(0,Ggrid_3d_unique.shape[0],1):
-            for p0 in range(Ggrid_3d_unique.shape[0]):
-                print('Computing VR_unique at element', p0)
-                VR_unique[p0] = compute_integrals_h(p0)
+            # for p0 in range(Ggrid_3d_unique.shape[0]):
+            import pymp,os
+            with pymp.Parallel(os.cpu_count()) as p:
+                for p0 in p.range(Ggrid_3d_unique.shape[0]):
+                    print('Computing VR_unique at element', p0)
+                    VR_unique[p0] = compute_integrals_h(p0)
 
 
 

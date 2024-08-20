@@ -156,7 +156,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
                                                 subtract_nocc=ss_subtract_nocc)
 
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
-            print('Ek (SS) (a.u.) = ', e_ss, file=f)
+            print('Ek (SS) (a.u.) = ',   e_ss, file=f)
 
             results["Ek_ss_list"].append(e_ss)
             results["Ek_list"].append(E_madelung)
