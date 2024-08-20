@@ -2070,10 +2070,6 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
                 for p0 in p.range(Ggrid_3d_unique.shape[0]):
                     print('Computing VR_unique at element', p0)
                     VR_unique[p0] = compute_integrals_h(p0)
-
-
-
-
         else:
             raise NotImplementedError("Symmetry not yet implemented for non-h case")
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_non_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
@@ -2088,6 +2084,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
 
         # throw not yet implemented error
         raise NotImplementedError("Symmetry not yet implemented for non-symmetry case")
+    return VR
         
 
         # def compute_integrals(j):
