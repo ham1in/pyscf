@@ -112,7 +112,12 @@ def localizer_gauss(x,r1,zeta=1):
     x = x / r1
     r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
     out = np.exp(-4*zeta**2 *np.power(r,2))
-    out(r>1) = 0
+    if np.isscalar(out):
+        if r > 1:
+            out = 0
+    else:
+        out[r>1] = 0
+
     return out
 
 

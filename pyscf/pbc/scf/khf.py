@@ -1498,11 +1498,13 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
         if cart_sphr_split:
             h_tol = 5e-8  # the Gaussian reaches this value at the closest boundary
-            unit_vec = np.array([1, 0, 0])
+            unit_vec = np.array([r1, 0, 0]) # arbitrary direction
 
             # Define the zetafunc
-            from ss_localizers import localizer_gauss
-            zetafunc = lambda zeta: localizer_gauss(unit_vec, r1, zeta)- h_tol
+            # from ss_localizers import localizer_gauss
+            import pyscf.pbc.scf.ss_localizers as ss_localizers
+
+            zetafunc = lambda zeta: ss_localizers.localizer_gauss(unit_vec, r1, zeta)- h_tol
             
             # Solve for zeta_tol using root finding (equivalent of fzero in MATLAB)
             result = root_scalar(zetafunc, bracket=[0.1, 10])  # Adjust bracket range if needed
@@ -1954,12 +1956,20 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
     def localizer_gauss_sph_bounded(x, y, z, r1, rmax):
         r = np.sqrt(x**2 + y**2 + z**2)  # Compute the radius
         val = np.exp(-4 * r**2 / (r1**2))  # Gaussian function
-        val[r > rmax] = 0  # Set values to 0 where r > rmax
+        if np.isscalar(r):
+            if r > rmax:
+                val = 0
+        else:
+            val[r > rmax] = 0  # Set values to 0 where r > rmax
         return val
     
     def localizer_gauss_sph_bounded_r(r, r1, rmax):
         val = np.exp(-4 * r**2 / (r1**2))  # Gaussian function
-        val[r > rmax] = 0  # Set values to 0 where r > rmax
+        if np.isscalar(r):
+            if r > rmax:
+                val = 0
+        else:
+            val[r > rmax] = 0  # Set values to 0 where r > rmax
         return val
         
     h_r = lambda q: localizer_gauss_sph_bounded_r(q, rmult * r1_h, r1_h)
@@ -1982,8 +1992,12 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
             out = 4 * np.pi * h_r(q)
         else:
             out = 4 * np.pi * np.sin(q * normR) / (q * normR) * h_r(q)
-            out[q < 1e-12 | normR < 1e-12] = 4 * np.pi * h_r(0)
-        return out
+            if np.isscalar(out):
+                if (q < 1e-12) | (normR < 1e-12):
+                    out = 4 * np.pi * h_r(0)
+            else:
+                out[q < 1e-12 | normR < 1e-12] = 4 * np.pi * h_r(0)
+        return np.real(out)
 
 
     def integrand_cart_h(x, y, z, R, h_xyz,gamma=0):
@@ -1991,21 +2005,28 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
         out = (1 - h_xyz(x, y, z)) * np.exp(-1j * R_dot_q) / (x**2 + y**2 + z**2)
         
         # Handle special case when x, y, and z are very small
-        mask = (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12)
-        out[mask] = gamma  # gaussian case
-        
-        return out
+        if np.isscalar(out):
+            if (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12):
+                out = gamma
+        else:
+            mask = (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12)
+            out[mask] = gamma  # gaussian case
+
+        return np.real(out)
 
 
     # integrand_scaled = lambda x,y,z,reciprocal_vectors: 
 
 
     integrand_sph_h_handle = lambda q,R: integrand_sph_h(q,h_r,R)
-    integrand_cart_h_handle =  lambda x,y,z,R: integrand_cart_h(x*integration_prism[0],
-                                                                y*integration_prism[1],
-                                                                z*integration_prism[2],
-                                                                R,h_xyz) 
-    
+    # integrand_cart_h_handle =  lambda x,y,z,R: integrand_cart_h(x*integration_prism[0],
+    #                                                             y*integration_prism[1],
+    #                                                             z*integration_prism[2],
+    #                                                             R,h_xyz)
+    def integrand_cart_h_handle(x,y,z,R):
+        q = integration_prism.T @ [x,y,z]
+        return integrand_cart_h(q[0],q[1],q[2],R,h_xyz)
+
 
     from scipy.integrate import quad, nquad
     from cubature import cubature
@@ -2037,12 +2058,12 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
 
 
             # Use cubature instead of nquad for the cartesian integral
-            integral_cart = cubature(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]),[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol)[0]
+            integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[0], xall[1], xall[2], Ggrid_3d_unique[k, :]),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol)[0]
             return integral_sph + integral_cart
 
         if use_h:
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
-            for p0,p1 in lib.prange(0,Ggrid_3d_unique.shape[0]):
+            for p0,p1 in lib.prange(0,Ggrid_3d_unique.shape[0],1):
                 VR_unique[p0] = compute_integrals_h(p0)
 
 
