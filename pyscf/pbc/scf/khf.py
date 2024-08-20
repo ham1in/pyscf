@@ -1411,11 +1411,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
             SqG[q, :] += temp_SqG_k / nkpts
 
     #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-    # if subtract_nocc:
-    #     SqG = SqG - nocc  # remove the zero order approximate nocc
-    #     assert np.abs(SqG[0, 0]) < 1e-4
-    # else:
-    #     assert np.abs(SqG[0, 0]) - nocc < 1e-4 
+    if subtract_nocc:
+        SqG = SqG - nocc  # remove the zero order approximate nocc
+        assert np.abs(SqG[0, 0]) < 1e-4
+    else:
+        assert np.abs(SqG[0, 0]) - nocc < 1e-4 
 
     #   Exchange energy can be formulated as
     #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)

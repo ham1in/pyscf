@@ -155,4 +155,4 @@ div_vector = [2]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 localizer = lambda q, r1: ss_localizers.localizer_gauss_unbounded(q,r1)
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=5)
+                         wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.0,ss_nlocal=5,ss_subtract_nocc=True)
