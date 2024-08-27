@@ -1381,7 +1381,12 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
     Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
     GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
-
+    # if debug:
+    #     nqG_local = N_local**2*nkpts
+    #     qG_full = np.zeros([nqG_local,3])
+    #     HqG_local_full = np.zeros([nqG_local])
+    #     SqG_local_full = np.zeros([nqG_local])
+    #     VqG_local_full = np.zeros([nqG_local])
     SqG = np.zeros((nkpts, nG), dtype=np.float64)
     print("MEM USAGE IS:", SqG.nbytes)
     for q in range(nkpts):
@@ -1409,6 +1414,22 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
                     temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
             SqG[q, :] += temp_SqG_k / nkpts
+    #     if debug:
+    #         qGz0 =qG[qG[:,2]==0]
+    #         SqGz0 = SqG_local[iq, :].T[qG[:, 2] == 0]
+
+    #         qG_full[iq*N_local**2:(iq+1)*N_local**2] = qGz0
+    #         SqG_local_full[iq*N_local**2:(iq+1)*N_local**2]=SqGz0
+    #         HqG_local_full[iq*N_local**2:(iq+1)*N_local**2]=H(qGz0)
+    #         VqG_local_full[iq*N_local**2:(iq+1)*N_local**2]=(1 - coul[qG[:,2]==0])/ np.sum(qGz0 ** 2,axis=1)
+    # if debug:
+    #     print('Saving qG mat files requested')
+    #     scipy.io.savemat('qG_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"qG_full":qG_full})
+    #     scipy.io.savemat('HqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"HqG_local_full":HqG_local_full})
+    #     scipy.io.savemat('VqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"VqG_local_full":VqG_local_full})
+    #     scipy.io.savemat('SqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"SqG_local_full":SqG_local_full})
+
+
 
     #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
     if subtract_nocc:
