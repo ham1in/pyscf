@@ -1297,7 +1297,7 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,subtract_nocc=True):
+def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG
     kpts = cell.make_kpts(nk, wrap_around=True)
     mf = KRHF(cell, exxdiv='ewald')
@@ -1420,7 +1420,7 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,subtract_n
         exponent = -((x[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
                      (x[:, 1] - mu_y) ** 2 / (2 * sigma_y ** 2) +
                      (x[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
-        return nocc * np.exp(exponent) if not subtract_nocc else -nocc + nocc * np.exp(exponent)
+        return nocc * np.exp(exponent) #if not subtract_nocc else -nocc + nocc * np.exp(exponent)
 
     # Initial guess for parameters
     initial_guess = [np.mean(qG_full[:, 0]), np.mean(qG_full[:, 1]), np.mean(qG_full[:, 2]),
@@ -1453,6 +1453,7 @@ def precompute_r1_prefactor(power_law_exponent,Nk,delta,gamma,M,r1):
         assert(exponent<0)
         return a*(nk_1d)**exponent + r1_min
     r1_prefactor_comp = compute_r1_power_law(r1_prefactor_max,r1_prefactor_min,power_law_exponent,Nk)
+    print(f'Precomputed r1 prefactor is {r1_prefactor_comp:.3f}')
     return r1_prefactor_comp
 
 # make function determining distance from point to a plane containing the origin
