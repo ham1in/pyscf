@@ -1320,8 +1320,8 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,subtract_n
     # Compute SqG
 
     #   Step 1.1: evaluate AO on a real fine mesh in unit cell
-    Lvec_real = kmf.cell.lattice_vectors()
-    NsCell = kmf.cell.mesh
+    Lvec_real = mf.cell.lattice_vectors()
+    NsCell = mf.cell.mesh
     L_delta = Lvec_real / NsCell[:, None]
     dvol = np.abs(np.linalg.det(L_delta))
 
@@ -1430,6 +1430,7 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,subtract_n
     def residuals(params, x, y):
         return gaussian_model(params, x) - y
 
+    from scipy.optimize import least_squares
     result = least_squares(residuals, initial_guess, args=(qG_full, SqG_local_full))
     params = result.x
 
@@ -1448,6 +1449,7 @@ def precompute_r1_prefactor(power_law_exponent,Nk,delta,gamma,M,r1):
     r1_prefactor_min = (-np.log(gamma)/4)**(-1./2.) *r1*np.min(M)/2.
     def compute_r1_power_law(r1_max,r1_min,exponent,nk_1d):
         a = (r1_max-r1_min)*2**(-exponent)
+        nk_1d = nk_1d.astype('float64')
         assert(exponent<0)
         return a*(nk_1d)**exponent + r1_min
     r1_prefactor_comp = compute_r1_power_law(r1_prefactor_max,r1_prefactor_min,power_law_exponent,Nk)
@@ -1458,7 +1460,8 @@ def dist_to_plane(point, normal):
     return np.abs(np.dot(point, normal) / np.linalg.norm(normal))
 def closest_fbz_distance(Lvec_recip,N_local):
     # Query point is the center of the parallelipid
-    query_point = Lvec_recip.sum(axis=0) / 2
+    query_point = np.sum(Lvec_recip,axis=0) / 2
+    # query_pooint = np.
 
     # For each unique pair of reciprocal vectors, find distance from the query point to the plane containing the origin
     distances = []

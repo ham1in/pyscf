@@ -112,10 +112,10 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
         assert (mf.cell.dimension == 3)
         from pyscf.pbc.scf.khf import compute_SqG_anisotropy
         print('Computing SqG anisotropy', file=f)
-        M = compute_SqG_anisotropy(mf, nks, dm_kpts, mo_coeff_kpts)
+        M = compute_SqG_anisotropy(cell=mf.cell, nk=nks, N_local=7)
     else:
         M = np.array([1,1,1])
-    ss_localizer = lambda q, r1: ss_localizer(q, r1, M)
+    ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
 
 
     # for div in div_vector:
@@ -158,7 +158,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             fourier_only = (khf_routine == "fourier")
 
             from pyscf.pbc.scf.khf import closest_fbz_distance
-            r1 = closest_fbz_distance(mf.cell.reciprocal_vectors, ss_nlocal)
+            r1 = closest_fbz_distance(mf.cell.reciprocal_vectors(), ss_nlocal)
 
             M = np.array([1,1,1])
 
@@ -175,14 +175,14 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
 
 
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only,
+                                                localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only,
                                                 subtract_nocc=ss_subtract_nocc)
 
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
             elif mf.cell.dimension ==2:
                 e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer, r1_prefactor=ss_r1_prefactor,
+                                                localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,
                                                 subtract_nocc=ss_subtract_nocc)
 
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
