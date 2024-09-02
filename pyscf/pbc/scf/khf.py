@@ -1297,6 +1297,181 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
+def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,subtract_nocc=True):
+    # Perform a smaller calculation of the same system to get the anisotropy of SqG
+    kpts = cell.make_kpts(nk, wrap_around=True)
+    mf = KRHF(cell, exxdiv='ewald')
+    df_type = df.GDF
+    mf.with_df = df_type(cell, kpts).build()
+    nkpts = np.prod(nk)
+
+    # Nk = np.prod(kmesh)
+    mf.exxdiv = 'ewald'
+    e1 = mf.kernel()
+    dm_kpts = mf.make_rdm1()
+    mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+
+    E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm_kpts,
+                                                                 mo_coeff_kpts=mo_coeff_kpts)
+
+    nocc = cell.tot_electrons() // 2
+
+
+    # Compute SqG
+
+    #   Step 1.1: evaluate AO on a real fine mesh in unit cell
+    Lvec_real = kmf.cell.lattice_vectors()
+    NsCell = kmf.cell.mesh
+    L_delta = Lvec_real / NsCell[:, None]
+    dvol = np.abs(np.linalg.det(L_delta))
+
+    # Evaluate wavefunction on all real space grid points
+    # # Establishing real space grid (Generalized for arbitary volume defined by 3 vectors)
+    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+    rptGrid3D = mesh_idx @ L_delta
+    # aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kmf.kpts)
+
+    #   Step 1.2: map q-mesh and k-mesh to BZ
+    qGrid = minimum_image(cell, kpts - kpts[0, :])
+    kGrid = minimum_image(cell, kpts)
+
+    #   Step 1.3: evaluate MO periodic component on a real fine mesh in unit cell
+    nbands = nocc
+    nG = np.prod(NsCell)
+
+    #   Step 1.4: compute the pair product
+    Lvec_recip = cell.reciprocal_vectors()
+    Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
+    Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
+    Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
+    Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
+    GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
+
+    # Compute S(q+G)
+    SqG = np.zeros((nkpts, nG), dtype=np.float64)
+    print("MEM USAGE IS:", SqG.nbytes)
+    for q in range(nkpts):
+        for k in range(nkpts):
+            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+
+            kpt1 = kGrid[k, :]
+            qpt = qGrid[q, :]
+            kpt2 = kpt1 + qpt
+
+            kpt2_BZ = minimum_image(mf.cell, kpt2)
+            idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
+            if len(idx_kpt2) != 1:
+                raise TypeError("Cannot locate (k+q) in the kmesh.")
+            idx_kpt2 = idx_kpt2[0]
+            kGdiff = kpt2 - kpt2_BZ
+
+            for n in range(nbands):
+                for m in range(nbands):
+                    u1 = uKpts[k, n, :]
+                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
+                    rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
+                    temp_fft = np.fft.fftn((rho12 * dvol))
+                    # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
+                    temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
+
+            SqG[q, :] += temp_SqG_k / nkpts
+
+
+    #   reciprocal lattice within the local domain
+    Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
+    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
+    GptGrid3D_local = np.hstack(
+        (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
+
+    #   location/index of GptGrid3D_local within 'GptGrid3D'
+    idx_GptGrid3D_local = []
+    for Gl in GptGrid3D_local:
+        idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
+        if len(idx_tmp) != 1:
+            raise TypeError("Cannot locate local G vector in the reciprocal lattice.")
+        else:
+            idx_GptGrid3D_local.append(idx_tmp[0])
+    idx_GptGrid3D_local = np.array(idx_GptGrid3D_local)
+
+    #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
+    SqG = SqG[:, idx_GptGrid3D_local]
+
+
+
+
+    # Fit Gaussian to data
+    nqG_local = N_local**dim * nkpts  # lattice size along each dimension in the real-space (equal to q + G size)
+    N_local3D = N_local**dim
+    qG_full = np.zeros((nqG_local, 3))
+    SqG_local_full = np.zeros(nqG_local)
+
+    # Fill arrays with data
+    for iq in range(qGrid.shape[0]):
+        qG = qGrid[iq, :] + GptGrid3D_local
+        start_idx = iq * N_local3D
+        end_idx = (iq + 1) * N_local3D
+        qG_full[start_idx:end_idx, :] = qG
+        SqG_local_full[start_idx:end_idx] = SqG[iq, :]
+
+    # Define Gaussian model function
+    def gaussian_model(params, x):
+        mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params
+        exponent = -((x[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
+                     (x[:, 1] - mu_y) ** 2 / (2 * sigma_y ** 2) +
+                     (x[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
+        return nocc * np.exp(exponent) if not subtract_nocc else -nocc + nocc * np.exp(exponent)
+
+    # Initial guess for parameters
+    initial_guess = [np.mean(qG_full[:, 0]), np.mean(qG_full[:, 1]), np.mean(qG_full[:, 2]),
+                     np.std(qG_full[:, 0]), np.std(qG_full[:, 1]), np.std(qG_full[:, 2])]
+
+    # Perform the curve fitting
+    def residuals(params, x, y):
+        return gaussian_model(params, x) - y
+
+    result = least_squares(residuals, initial_guess, args=(qG_full, SqG_local_full))
+    params = result.x
+
+    # Extract sigma values
+    sigma = params[3:6]
+
+    # Print results
+    print(f'params are {params[0]:.6f}, {params[1]:.6f}, {params[2]:.6f}, '
+          f'{params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
+    print(f'Sx, Sy, Sz are {params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
+
+    return sigma
+
+def precompute_r1_prefactor(power_law_exponent,Nk,delta,gamma,M,r1):
+    r1_prefactor_max = (-np.log(delta)/4)**(-1./2.) *r1*np.min(M)/2.
+    r1_prefactor_min = (-np.log(gamma)/4)**(-1./2.) *r1*np.min(M)/2.
+    def compute_r1_power_law(r1_max,r1_min,exponent,nk_1d):
+        a = (r1_max-r1_min)*2**(-exponent)
+        assert(exponent<0)
+        return a*(nk_1d)**exponent + r1_min
+    r1_prefactor_comp = compute_r1_power_law(r1_prefactor_max,r1_prefactor_min,power_law_exponent,Nk)
+    return r1_prefactor_comp
+
+# make function determining distance from point to a plane containing the origin
+def dist_to_plane(point, normal):
+    return np.abs(np.dot(point, normal) / np.linalg.norm(normal))
+def closest_fbz_distance(Lvec_recip,N_local):
+    # Query point is the center of the parallelipid
+    query_point = Lvec_recip.sum(axis=0) / 2
+
+    # For each unique pair of reciprocal vectors, find distance from the query point to the plane containing the origin
+    distances = []
+    for i in range(3):
+        for j in range(i+1, 3):
+            distances.append(dist_to_plane(query_point, np.cross(Lvec_recip[i], Lvec_recip[j])))
+
+    # Find the minimum distance
+    r1 = N_local*np.min(distances) #must be scaled by nlocal
+    return r1
+
+
+
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, localizer=None, r1_prefactor=1.0,fourier_only=False,subtract_nocc=False,full_domain=True):
     """
@@ -1455,24 +1630,9 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
     #   localizer for the local domain
     #r1 = np.min(LsCell_bz_local_norms) / 2
-    # Determine R1 by finding minimum distance to the boundary
-
-
-    # make function determining distance from point to a plane containing the origin
-    def dist_to_plane(point, normal):
-        return np.abs(np.dot(point, normal) / np.linalg.norm(normal))
-    
-    # Query point is the center of the parallelipid
-    query_point = Lvec_recip.sum(axis=0) / 2    
-
-    # For each unique pair of reciprocal vectors, find distance from the query point to the plane containing the origin
-    distances = []
-    for i in range(3):
-        for j in range(i+1, 3):
-            distances.append(dist_to_plane(query_point, np.cross(Lvec_recip[i], Lvec_recip[j])))
 
     # Find the minimum distance
-    r1 = N_local*np.min(distances) #must be scaled by nlocal
+    r1 = closest_fbz_distance(Lvec_recip,N_local)
 
 
     
