@@ -157,4 +157,5 @@ import pyscf.pbc.scf.ss_localizers as ss_localizers
 def localizer(q,r1,M=np.array([1,1,1])):
     return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_debug=True,ss_r1_prefactor=1.0,ss_nlocal=3,ss_subtract_nocc=True)
+                         wrap_around=wrap_around,ss_debug=False,ss_localizer=localizer,ss_r1_prefactor=1.0,ss_nlocal=3,
+                         ss_subtract_nocc=True)

@@ -100,10 +100,11 @@ def localizer_rootexp_2d(x,r1,p=1.0,k=1.0):
     return val
 
 def localizer_gauss_unbounded(x,r1,zeta=1, M=np.array([1,1,1])):
-    if x.shape[1] == 3:
+    if x.ndim == 2:
+        assert(x.shape[1] == 3)
         M = np.diag(M)
         x = x @ M
-    r = np.linalg.norm(x, axis=1) if x.ndim > 1 else np.linalg.norm(x)
+    r = np.linalg.norm(x/r1, axis=1) if x.ndim > 1 else np.linalg.norm(x)
     return np.exp(-4*zeta**2 *np.power(r,2))
 
 

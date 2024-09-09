@@ -1673,6 +1673,8 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     #   Kernel from Fourier Interpolation
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     cart_sphr_split = True
+    H = lambda q: localizer(q,r1_prefactor * r1)
+
     if full_domain:
         from scipy.optimize import root_scalar
 
@@ -1715,7 +1717,6 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
         CoulR[normR < 1e-8] = 4 * np.pi * r1
 
 
-    H = lambda q: localizer(q,r1_prefactor * r1)
     #   Step 4: Compute the correction
 
     ss_correction = 0
@@ -2226,6 +2227,9 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
         # q = q.T[0] # needed for doing nquad
         return integrand_cart_h(q[0],q[1],q[2],R,h_xyz) * volume # result must be scaled because of transformed coordinates
 
+    integrand_cart_h_handle_real = lambda x,y,z,R: integrand_cart_h_handle(x,y,z,R).real
+    integrand_cart_h_handle_imag = lambda x,y,z,R: integrand_cart_h_handle(x,y,z,R).imag
+
 
     from scipy.integrate import quad, nquad
     from cubature import cubature
@@ -2248,8 +2252,7 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
                             (G[2] == np.abs(Ggrid_3d[:, 2])))[0]
             equivalent_indices[k] = hits
                                                                                                                                                                                                                           
-        VR_unique = np.zeros(Ggrid_3d_unique.shape[0])
-        
+        VR_unique = np.zeros(Ggrid_3d_unique.shape[0], dtype=complex)
         def compute_integrals_h(k):
             integral_sph = quad(lambda q: integrand_sph_h_handle(q, Ggrid_3d_unique[k, :]), 0, r1_h, epsabs=global_tol, epsrel=global_tol)[0]
             # integral_cart = nquad(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]),
@@ -2259,12 +2262,19 @@ def fourier_integration_3d(reciprocal_vectors,N_local,r1_h,use_symm,use_h,rmult,
             # Use cubature instead of nquad for the cartesian integral
             vectorized = True
             if vectorized:
-                integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[:,0], xall[:,1], xall[:,2], Ggrid_3d_unique[k, :]),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
+                integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Ggrid_3d_unique[k, :]),
+                                              3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                                              relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Ggrid_3d_unique[k, :]),
+                                              3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                                              relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                integral_cart = integral_cart_real + 1j * integral_cart_imag
+                # integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[:,0], xall[:,1], xall[:,2], Ggrid_3d_unique[k, :]),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
+
             else:
                 integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[0], xall[1], xall[2], Ggrid_3d_unique[k, :]),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
 
             return integral_sph + integral_cart
-
         if use_h:
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
             # for p0,p1 in lib.pr`ange(0,Ggrid_3d_unique.shape[0],1):

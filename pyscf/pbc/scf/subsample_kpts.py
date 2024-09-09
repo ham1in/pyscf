@@ -160,7 +160,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             from pyscf.pbc.scf.khf import closest_fbz_distance
             r1 = closest_fbz_distance(mf.cell.reciprocal_vectors(), ss_nlocal)
 
-            M = np.array([1,1,1])
+            # M = np.array([1,1,1])
 
             if ss_r1_prefactor == "precompute":
                 from pyscf.pbc.scf.khf import precompute_r1_prefactor
