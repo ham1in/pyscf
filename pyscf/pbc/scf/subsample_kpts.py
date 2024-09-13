@@ -6,7 +6,7 @@ import copy
 
 def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
                    wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
-                   ss_subtract_nocc=False,ss_use_sqG_anisotropy=False):
+                   ss_subtract_nocc=False,ss_use_sqG_anisotropy=False,ss_nufft_gl=False):
     """
 
     Args:
@@ -172,11 +172,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
                 ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent, nk_1d,delta,gamma,M,r1)
 
             if mf.cell.dimension ==3:
-
-
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, N_local=ss_nlocal, debug=ss_debug,
                                                 localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only,
-                                                subtract_nocc=ss_subtract_nocc)
+                                                subtract_nocc=ss_subtract_nocc,nufft_gl=ss_nufft_gl)
 
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
