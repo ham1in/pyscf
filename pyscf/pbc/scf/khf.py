@@ -2281,9 +2281,8 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         WX = WX * np.pi
         WY = WY * np.pi
         WZ = WZ * np.pi
-        
-        reciprocal_vectors_nlocal = reciprocal_vectors * N_local
 
+        reciprocal_vectors_nlocal = reciprocal_vectors * N_local
 
         QX = QX_unscaled * np.sum(reciprocal_vectors_nlocal[:,0]) / 2
         QY = QY_unscaled * np.sum(reciprocal_vectors_nlocal[:,1]) / 2
@@ -2291,11 +2290,11 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # Compute target function V(q)*(1-h(q))
         target_fq = 1.0 / (QX**2 + QY**2 + QZ**2) * (1 - h_xyz(QX, QY, QZ)) * WX * WY * WZ
         del WX, WY, WZ, QX, QY, QZ
-        
+
         target_fq = np.nan_to_num(target_fq)
         target_fq = target_fq.ravel()
         target_fq = target_fq + 1j * np.zeros_like(target_fq)
-        
+
         QX_nufft_inp = QX_unscaled.ravel() * np.pi
         QY_nufft_inp = QY_unscaled.ravel() * np.pi
         QZ_nufft_inp = QZ_unscaled.ravel() * np.pi
@@ -2306,8 +2305,8 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # VhR_cart = nufft(VhR_cart, qy_fft, Ry / (2 * np.pi), 2)
         # VhR_cart = nufft(VhR_cart, qz_fft, Rz / (2 * np.pi), 3)
 
-        VhR_cart_3d = finufft.nufft3d1(QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp, target_fq, (nR_1d,nR_1d,nR_1d), eps=1e-8, isign=-1)
-        # del target_fq, QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp
+        VhR_cart_3d = finufft.nufft3d1(QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp, target_fq, (nR_1d,nR_1d,nR_1d), eps=1e-10, isign=-1)
+        del target_fq, QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp
         VhR_cart = VhR_cart_3d.ravel(order='C') # To get z as fastest changing index
 
         # compute volume of Fourier cell of the nlocal BZs
