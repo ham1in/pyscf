@@ -1499,6 +1499,12 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     # Function implementation goes here
     #Xin's version - using for test/benchmarking
     print("Singularity Subtraction for Fock Exchange (3D) requested")
+    # Start timer
+    import time
+
+    ss_start_time = time.time()
+
+
     from scipy.special import sici
     import pyscf.pbc.scf.ss_localizers as ss_localizers
 
@@ -1769,6 +1775,10 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
         e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
     e_ex_ss2 = np.real(prefactor_ex * 4 * np.pi * e_ex_ss2)
+    
+    
+    ss_end_time = time.time()
+    print(f"Time taken for SS correction: {ss_end_time - ss_start_time:.2f}")
 
     return e_ex_ss, e_ex_ss2, int_terms, quad_terms
 
@@ -2147,6 +2157,10 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
  
     from pyscf import lib
     import numpy as np
+    import time
+    coulR_start_time = time.time()
+
+
     nR_1d = (Ggrid_3d.shape[0])**(1/3)
     assert (np.abs(nR_1d-np.round(nR_1d))<1e-8) # Check if nR_1d is an integer
     nR_1d = np.round(nR_1d).astype(int)
@@ -2314,7 +2328,6 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         vol_direct_nlocal = np.abs(np.dot(direct_vectors_nlocal[0], np.cross(direct_vectors_nlocal[1], direct_vectors_nlocal[2])))
         VhR_cart = VhR_cart / vol_direct_nlocal
 
-        
         # Compute 1d frequencies from finufft
         R_array = np.arange(-nR_1d/2, nR_1d/2,dtype=int)
         RX, RY, RZ = np.meshgrid(R_array, R_array, R_array, indexing='ij')
@@ -2364,26 +2377,21 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         
         def compute_integrals_h(k,Rvec,unique=True):
             integral_sph = quad(lambda q: integrand_sph_h_handle(q, Rvec), 0, r1_h, epsabs=global_tol, epsrel=global_tol)[0]
-            # integral_cart = nquad(lambda x, y, z: integrand_cart_h_handle(x, y, z, Ggrid_3d_unique[k, :]),
-            #                     [[x_min, x_max], [y_min, y_max], [z_min, z_max]], opts={'epsabs': global_tol, 'epsrel': global_tol,'points':((0,0,0))})[0]
-            #
-
-            # Use cubature instead of nquad for the cartesian integral
 
             if nufft_gl:
                 integral_cart = 0
-                vectorized = True
-                if vectorized:
-                    integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                                                3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                                                relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                    integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                                                3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                                                relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                    if unique:
-                        VhR_cart_ref_unique[k] = integral_cart_real + 1j * integral_cart_imag
-                    else:
-                        VR_cart_ref[k] = integral_cart_real + 1j * integral_cart_imag
+                # vectorized = True
+                # if vectorized:
+                #     integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
+                #                                 3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                #                                 relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                #     integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
+                #                                 3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                #                                 relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                #     if unique:
+                #         VhR_cart_ref_unique[k] = integral_cart_real + 1j * integral_cart_imag
+                #     else:
+                #         VR_cart_ref[k] = integral_cart_real + 1j * integral_cart_imag
 
             else:
                 vectorized = True
@@ -2437,6 +2445,8 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         # throw not yet implemented error
         raise NotImplementedError("Symmetry not yet implemented for non-symmetry case")
+    coulR_end_time = time.time()
+    print('Time taken for VhR build:', coulR_end_time - coulR_start_time)
     return VR
         
 
