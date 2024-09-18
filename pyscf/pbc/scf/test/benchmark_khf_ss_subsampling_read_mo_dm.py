@@ -126,8 +126,14 @@ mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
-e1 = mf.kernel()
-dm = mf.make_rdm1()
+
+# Read dm and mo_coeff from pkl file   
+import pickle
+with open('ss_anisotropy_inputs.pkl', 'rb') as f:
+    ss_input = pickle.load(f)
+
+dm = np.array(ss_input['dm_kpts'])
+mo_coeff = np.array(ss_input['mo_coeff_kpts'])
 
 # Regular energy components
 
@@ -167,12 +173,8 @@ ss_params = {
     'use_sqG_anisotropy': True,
     'nufft_gl': True,
     'n_fft': 350,
+    'M':ss_input['M'],
 }
 
-
-# results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-#                          wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.80,ss_nlocal=3,ss_localizer=localizer,
-#                          ss_subtract_nocc=True,ss_use_sqG_anisotropy=True,ss_nufft_gl=False,ss_n_fft=350)
-
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False)
+                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mo_coeff, dm_kpts=dm)

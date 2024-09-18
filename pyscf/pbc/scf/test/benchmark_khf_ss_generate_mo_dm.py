@@ -150,29 +150,20 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1,3]
+# div_vector = [2,2]
+from pyscf.pbc.scf.khf import compute_SqG_anisotropy
 
-import pyscf.pbc.scf.ss_localizers as ss_localizers
-# localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
-def localizer(q,r1,M=np.array([1,1,1])):
-    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+mf.exxdiv = None  #so that standard energy is computed without madelung
 
-# Setup ss_params dict
-ss_params = {
-    'debug': False,
-    'r1_prefactor': 1.80,
-    'nlocal': 3,
-    'localizer': localizer,
-    'subtract_nocc': True,
-    'use_sqG_anisotropy': True,
-    'nufft_gl': True,
-    'n_fft': 350,
+# Store output from make_ss_inputs in a numpy file
+results = {
+    'mo_coeff_kpts': np.array(mf.mo_coeff_kpts),
+    'dm_kpts': np.array(dm),
 }
 
+M = compute_SqG_anisotropy(cell=mf.cell, nk=kmesh, N_local=7,dm_kpts=dm,mo_coeff_kpts=mf.mo_coeff_kpts)
 
-# results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-#                          wrap_around=wrap_around,ss_debug=False,ss_r1_prefactor=1.80,ss_nlocal=3,ss_localizer=localizer,
-#                          ss_subtract_nocc=True,ss_use_sqG_anisotropy=True,ss_nufft_gl=False,ss_n_fft=350)
-
-results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False)
+results["M"] = M
+import pickle
+with open('ss_anisotropy_inputs.pkl', 'wb') as f:
+    pickle.dump(results, f)

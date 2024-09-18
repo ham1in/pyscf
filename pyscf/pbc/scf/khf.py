@@ -1297,8 +1297,9 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3):
-    # Perform a smaller calculation of the same system to get the anisotropy of SqG
+def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=None,mo_coeff_kpts=None):
+    # Perform a smaller calculation of the same system to get the anisotropy of SqG\
+    print('Computing SqG anisotropy')
     kpts = cell.make_kpts(nk, wrap_around=True)
     mf = KRHF(cell, exxdiv='ewald')
     df_type = df.GDF
@@ -1308,11 +1309,14 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3):
     # Nk = np.prod(kmesh)
     mf.exxdiv = 'ewald'
     e1 = mf.kernel()
-    dm_kpts = mf.make_rdm1()
-    mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+    if dm_kpts is None:
+        dm_kpts = mf.make_rdm1()
+    if mo_coeff_kpts is None:
+        mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+    
 
     E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm_kpts,
-                                                                 mo_coeff_kpts=mo_coeff_kpts)
+                                                                    mo_coeff_kpts=mo_coeff_kpts)
 
     nocc = cell.tot_electrons() // 2
 
@@ -1473,9 +1477,6 @@ def closest_fbz_distance(Lvec_recip,N_local):
     # Find the minimum distance
     r1 = N_local*np.min(distances) #must be scaled by nlocal
     return r1
-
-
-
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, 
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=False, 

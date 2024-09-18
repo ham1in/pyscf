@@ -4,9 +4,11 @@ from pyscf.lib import logger
 import copy
 
 
-def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-                   wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
-                   ss_subtract_nocc=False,ss_use_sqG_anisotropy=False,ss_nufft_gl=False,ss_n_fft=400):
+# def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
+#                    wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
+#                    ss_subtract_nocc=False,ss_use_sqG_anisotropy=False,ss_nufft_gl=False,ss_n_fft=400):
+def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
+                   wrap_around=False, sanity_run=False, ss_params=None):
     """
 
     Args:
@@ -26,6 +28,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
         Ej_list: Hartree term for each subsampling iteration
         Ek_list: Exchange term for each subsampling iteration
     """
+
+
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell, kpts=mf.kpts)
     nk = np.prod(nks)
     assert nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk"
@@ -33,13 +37,16 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
     # assert(nk / (np.prod(div_vector) ** dim) !=0, "Div vector has more divisions than what is possible.")
 
     # Sanity run
+
+
     if mf.cell.output is not None:
         f = open(mf.cell.output, "a")
     else:
         f = None
     print('Recomputing jk', file=f)
     print('Sampling ', nk, 'k-points', file=f)
-    mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+    if mo_coeff_kpts is None:
+        mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
 
     if dm_kpts is None:
         dm_kpts = mf.make_rdm1()
@@ -103,23 +110,37 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
     else:
         print('khf_routine = ', khf_routine, file=f)
 
-
     if khf_routine in khf_routines_stagger:
         print('Warning, no J term computed', file=f)
 
-    if ss_use_sqG_anisotropy:
-        assert (khf_routine in khf_routines_ss)
-        assert (mf.cell.dimension == 3)
-        from pyscf.pbc.scf.khf import compute_SqG_anisotropy
-        print('Computing SqG anisotropy', file=f)
-        M = compute_SqG_anisotropy(cell=mf.cell, nk=nks, N_local=7)
-    else:
+    if khf_routine in khf_routines_ss:
+        assert(ss_params)
+        # Unpack params
+        ss_localizer = ss_params['localizer']
+        ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
+        ss_nlocal = ss_params['nlocal']
+        ss_r1_prefactor = ss_params['r1_prefactor']
         M = np.array([1,1,1])
-    ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
 
+        if ss_params['use_sqG_anisotropy']:
+            assert (khf_routine in khf_routines_ss)
+            assert (mf.cell.dimension == 3)
+            from pyscf.pbc.scf.khf import compute_SqG_anisotropy
+            if 'M' in ss_params.keys():
+                M = ss_params['M']
+            else:
+                print('Computing SqG anisotropy', file=f)
+                M = compute_SqG_anisotropy(cell=mf.cell, nk=nks, N_local=7)
+
+
+
+        
 
     # for div in div_vector:
-    for j in range(-1, len(div_vector)):
+    start_ind = 0
+    if sanity_run:
+        start_ind = -1
+    for j in range(start_ind, len(div_vector)):
         if j == -1:
             div = 1
             for i in range(dim):
@@ -158,7 +179,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
             fourier_only = (khf_routine == "fourier")
 
             from pyscf.pbc.scf.khf import closest_fbz_distance
-            r1 = closest_fbz_distance(mf.cell.reciprocal_vectors(), ss_nlocal)
+            r1 = closest_fbz_distance(mf.cell.reciprocal_vectors(),ss_nlocal)
 
             # M = np.array([1,1,1])
 
@@ -172,16 +193,18 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df
                 ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent, nk_1d,delta,gamma,M,r1)
 
             if mf.cell.dimension ==3:
-                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,fourier_only=fourier_only,
-                                                subtract_nocc=ss_subtract_nocc,nufft_gl=ss_nufft_gl,n_fft=ss_n_fft)
+                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, 
+                                                               N_local=ss_params['nlocal'], debug=ss_params['debug'],
+                                                               localizer=ss_localizer_M, r1_prefactor=ss_params['r1_prefactor'], 
+                                                               fourier_only=fourier_only, subtract_nocc=ss_params['subtract_nocc'], 
+                                                               nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'])
 
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
             elif mf.cell.dimension ==2:
-                e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_nlocal, debug=ss_debug,
-                                                localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,
-                                                subtract_nocc=ss_subtract_nocc)
+                e_ss, int_term, quad_term = khf_ss_2d(mf, nks, uKpts, E_standard, N_local=ss_params['nlocal'], debug=ss_params['debug'],
+                                                localizer=ss_localizer_M, r1_prefactor=ss_params['r1_prefactor'],
+                                                subtract_nocc=ss_params['subtract_nocc'])
 
             print('Ek (Madelung) (a.u.) = ', E_madelung, file=f)
             print('Ek (SS) (a.u.) = ',   e_ss, file=f)
