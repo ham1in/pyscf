@@ -1480,7 +1480,7 @@ def closest_fbz_distance(Lvec_recip,N_local):
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, 
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=False, 
-              full_domain=True,nufft_gl=True,n_fft=400):
+              full_domain=True,nufft_gl=True,n_fft=400,vhR_symm=True):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1715,7 +1715,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
                 raise ValueError("Root finding for zetafunc did not converge")
             # rmult = 0.2
             # Call the Fourier integration function
-            CoulR = fourier_integration_3d(Lvec_recip,Lvec_real,N_local, r1_h, True, True, rmult, RptGrid3D_local,nufft_gl,n_fft)
+            CoulR = fourier_integration_3d(Lvec_recip,Lvec_real,N_local, r1_h, vhR_symm, True, rmult, RptGrid3D_local,nufft_gl,n_fft)
 
         else:
             raise NotImplementedError("Must use cart-sph split")
@@ -2208,8 +2208,6 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         h_r = lambda q: localizer_gauss_sph_bounded_r(q, rmult * r1_h, r1_h)
         h_xyz = lambda x, y, z: localizer_gauss_sph_bounded(x, y, z, rmult * r1_h, r1_h)
 
-
-
     integration_prism = N_local * reciprocal_vectors
     # integration_start_point = -1./2. *np.sum(N_local * reciprocal_vectors,axis=0).T
     integration_start_point = np.zeros((3,1),)
@@ -2217,7 +2215,6 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
     x_min, x_max = -0.5, 0.5
     y_min, y_max = -0.5, 0.5
     z_min, z_max = -0.5, 0.5
-
 
     def integrand_sph_h(q, h_r, R):
         normR = np.linalg.norm(R)
@@ -2232,11 +2229,10 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
                 out[q < 1e-12 | normR < 1e-12] = 4 * np.pi * h_r(0)
         return out
 
-
     def integrand_cart_h(x, y, z, R, h_xyz,gamma=0):
         R_dot_q = R[0]*x + R[1]*y + R[2]*z
         out = (1 - h_xyz(x, y, z)) * np.exp(-1j * R_dot_q) / (x**2 + y**2 + z**2)
-        
+
         # Handle special case when x, y, and z are very small
         if np.isscalar(out):
             if (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12):
@@ -2247,17 +2243,12 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         return out
 
-
-    # integrand_scaled = lambda x,y,z,reciprocal_vectors: 
-
-
-
     integrand_sph_h_handle = lambda q,R: integrand_sph_h(q,h_r,R)
     # integrand_cart_h_handle =  lambda x,y,z,R: integrand_cart_h(x,y,z,R,h_xyz)
     def integrand_cart_h_handle(x,y,z,R):
         if np.isscalar(x):
-            assert(np.isscalar(y))
-            assert(np.isscalar(z))
+            assert (np.isscalar(y))
+            assert (np.isscalar(z))
             coord_vecs = np.array([[x], [y], [z]])
         else:
             coord_vecs = np.array([x, y, z])
@@ -2270,6 +2261,29 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
     integrand_cart_h_handle_real = lambda x,y,z,R: integrand_cart_h_handle(x,y,z,R).real
     integrand_cart_h_handle_imag = lambda x,y,z,R: integrand_cart_h_handle(x,y,z,R).imag
 
+
+    def compute_integrals_h(k,Rvec,unique=True):
+        integral_sph = quad(lambda q: integrand_sph_h_handle(q, Rvec), 0, r1_h, epsabs=global_tol, epsrel=global_tol)[0]
+
+        if nufft_gl:
+            integral_cart = 0
+
+        else:
+            vectorized = True
+            if vectorized:
+                integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
+                                            3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                                            relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
+                                            3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                                            relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                integral_cart = integral_cart_real + 1j * integral_cart_imag
+                # integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[:,0], xall[:,1], xall[:,2], Ggrid_3d_unique[k, :]),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
+
+            else:
+                integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[0], xall[1], xall[2], Rvec),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
+
+        return integral_sph + integral_cart
 
     from scipy.integrate import quad, nquad
     from cubature import cubature
@@ -2333,7 +2347,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         R_array = np.arange(-nR_1d/2, nR_1d/2,dtype=int)
         RX, RY, RZ = np.meshgrid(R_array, R_array, R_array, indexing='ij')
         fft_grid_R = np.column_stack([RX.ravel(), RY.ravel(), RZ.ravel()])
-        assert((direct_vectors == direct_vectors.T).all())
+        assert ((direct_vectors == direct_vectors.T).all())
         fft_grid_R = fft_grid_R @ (direct_vectors/N_local)
         
         # del RX, RY, RZ
@@ -2346,7 +2360,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
                 raise ValueError("G vector not found in the FFT grid.")
             indices.append(index[0])
         indices = np.array(indices)
-        
+
         # Keep values of VhR_cart at the found indices
         VhR_cart = VhR_cart[indices]
         assert (VhR_cart.shape[0] == Ggrid_3d.shape[0])
@@ -2371,45 +2385,11 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # Find indices that were not picked up
         missed_indices = [k for k in range(Ggrid_3d.shape[0]) if k not in indices_hit]
 
-
-
         VR_unique = np.zeros(Ggrid_3d_unique.shape[0], dtype=complex)
         VhR_cart_ref_unique = np.zeros(Ggrid_3d_unique.shape[0], dtype=complex)
         
-        def compute_integrals_h(k,Rvec,unique=True):
-            integral_sph = quad(lambda q: integrand_sph_h_handle(q, Rvec), 0, r1_h, epsabs=global_tol, epsrel=global_tol)[0]
 
-            if nufft_gl:
-                integral_cart = 0
-                # vectorized = True
-                # if vectorized:
-                #     integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                #                                 3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                #                                 relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                #     integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                #                                 3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                #                                 relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                #     if unique:
-                #         VhR_cart_ref_unique[k] = integral_cart_real + 1j * integral_cart_imag
-                #     else:
-                #         VR_cart_ref[k] = integral_cart_real + 1j * integral_cart_imag
-
-            else:
-                vectorized = True
-                if vectorized:
-                    integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                                                3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                                                relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                    integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                                                3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                                                relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                    integral_cart = integral_cart_real + 1j * integral_cart_imag
-                    # integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[:,0], xall[:,1], xall[:,2], Ggrid_3d_unique[k, :]),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
-
-                else:
-                    integral_cart = cubature(lambda xall: integrand_cart_h_handle(xall[0], xall[1], xall[2], Rvec),3,1,[x_min,y_min,z_min],[x_max,y_max,z_max],relerr=global_tol,abserr=global_tol,vectorized=vectorized)[0][0]
-
-            return integral_sph + integral_cart
+        
         if use_h:
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))
             # for p0,p1 in lib.pr`ange(0,Ggrid_3d_unique.shape[0],1):
@@ -2443,9 +2423,16 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         if nufft_gl:
             VR = VR + VhR_cart
     else:
+        if use_h:
+            # VR = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d.shape[0]))
+            for k in range(Ggrid_3d.shape[0]):
+                Rvec = Ggrid_3d[k, :]
+                print('Computing VR at element', k, 'Rvec:', Rvec)
+                VR[k] = compute_integrals_h(k,Rvec)
+        else:
+            raise NotImplementedError("Using h(q) must be used for for non-symmetry case")
 
-        # throw not yet implemented error
-        raise NotImplementedError("Symmetry not yet implemented for non-symmetry case")
+
     coulR_end_time = time.time()
     print('Time taken for VhR build:', coulR_end_time - coulR_start_time)
     return VR

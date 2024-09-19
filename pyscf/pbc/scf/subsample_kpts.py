@@ -197,7 +197,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                                                                N_local=ss_params['nlocal'], debug=ss_params['debug'],
                                                                localizer=ss_localizer_M, r1_prefactor=ss_params['r1_prefactor'], 
                                                                fourier_only=fourier_only, subtract_nocc=ss_params['subtract_nocc'], 
-                                                               nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'])
+                                                               nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'],
+                                                               vhR_symm=ss_params['vhR_symm'])
 
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
