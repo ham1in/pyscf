@@ -187,11 +187,11 @@ def localizer(q,r1,M=np.array([1,1,1])):
 ss_params = {
     'debug': False,
     'r1_prefactor': 1.80,
-    'nlocal': 3,
+    'nlocal': 1,
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': True,
-    'nufft_gl': False,
+    'nufft_gl': True,
     'n_fft': 350,
     'vhR_symm': False,
 }

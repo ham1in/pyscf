@@ -2211,7 +2211,8 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
     integration_prism = N_local * reciprocal_vectors
     # integration_start_point = -1./2. *np.sum(N_local * reciprocal_vectors,axis=0).T
     integration_start_point = np.zeros((3,1),)
-    volume = np.abs(np.dot(integration_prism[0], np.cross(integration_prism[1], integration_prism[2])))
+    # volume = np.abs(np.dot(integration_prism[0], np.cross(integration_prism[1], integration_prism[2])))
+    volume = np.linalg.det(integration_prism)
     x_min, x_max = -0.5, 0.5
     y_min, y_max = -0.5, 0.5
     z_min, z_max = -0.5, 0.5
@@ -2267,7 +2268,18 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         if nufft_gl:
             integral_cart = 0
-
+            vectorized = True
+            if vectorized:
+                integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
+                                            3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                                            relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
+                                            3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+                                            relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+                if unique:
+                    VhR_cart_ref_unique[k] = integral_cart_real + 1j * integral_cart_imag
+                else:
+                    VR_cart_ref[k] = integral_cart_real + 1j * integral_cart_imag
         else:
             vectorized = True
             if vectorized:
@@ -2290,13 +2302,14 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
     VR = np.zeros(Ggrid_3d.shape[0])
     VR_cart_ref = np.zeros(Ggrid_3d.shape[0])
-    global_tol = 1e-7
+    global_tol = 1e-9
     import numpy as np
     from numpy.fft import fftn
     from scipy.special import legendre
 
     # Perform FFT of V(q)*(1-h(q))
     if nufft_gl:
+
         import finufft
         # Use Gauss-Legendre quadrature points, then scale by reciprocal lattice vectors
         qx_fft, w_array_x = np.polynomial.legendre.leggauss(n_fft)
@@ -2304,29 +2317,53 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         qz_fft, w_array_z = np.polynomial.legendre.leggauss(n_fft)
 
         QX_unscaled, QY_unscaled, QZ_unscaled = np.meshgrid(qx_fft, qy_fft, qz_fft, indexing='ij')
+        Qall_unscaled = np.column_stack([QX_unscaled.ravel(), QY_unscaled.ravel(), QZ_unscaled.ravel()])
         WX, WY, WZ = np.meshgrid(w_array_x, w_array_y, w_array_z, indexing='ij')
-
-        # Scale weights for nufft input
-        WX = WX * np.pi
-        WY = WY * np.pi
-        WZ = WZ * np.pi
 
         reciprocal_vectors_nlocal = reciprocal_vectors * N_local
 
-        QX = QX_unscaled * np.sum(reciprocal_vectors_nlocal[:,0]) / 2
-        QY = QY_unscaled * np.sum(reciprocal_vectors_nlocal[:,1]) / 2
-        QZ = QZ_unscaled * np.sum(reciprocal_vectors_nlocal[:,2]) / 2
+        # Find corner with highest L_\infty norm
+        corner_x,corner_y,corner_z = np.meshgrid([x_min,x_max],[y_min,y_max],[z_min,z_max],indexing='ij')
+        corners_unscaled = np.column_stack([corner_x.ravel(),corner_y.ravel(),corner_z.ravel()])
+        corners = reciprocal_vectors_nlocal @ corners_unscaled.T
+        max_L_infty = np.max(np.linalg.norm(np.abs(corners),axis=0,ord=np.inf)) # max radius, not length
+
+        # QX = QX_unscaled * np.sum(reciprocal_vectors_nlocal[:,0]) / 2
+        # QY = QY_unscaled * np.sum(reciprocal_vectors_nlocal[:,1]) / 2
+        # QZ = QZ_unscaled * np.sum(reciprocal_vectors_nlocal[:,2]) / 2
+        
+        QX = reciprocal_vectors_nlocal[0,:] @ Qall_unscaled.T / (2)
+        QY = reciprocal_vectors_nlocal[1,:] @ Qall_unscaled.T / (2)
+        QZ = reciprocal_vectors_nlocal[2,:] @ Qall_unscaled.T / (2)
+        QX = QX.reshape((n_fft,n_fft,n_fft))
+        QY = QY.reshape((n_fft,n_fft,n_fft))
+        QZ = QZ.reshape((n_fft,n_fft,n_fft))
+
+        # Scale so it fits inside [-Pi, Pi)^3
+        QX_nufft_inp = QX_unscaled.ravel() * np.pi
+        QY_nufft_inp = QY_unscaled.ravel() * np.pi
+        QZ_nufft_inp = QZ_unscaled.ravel() * np.pi
+        
         # Compute target function V(q)*(1-h(q))
+
+        # # Scale weights for nufft input
+        # WX = WX * np.pi
+        # WY = WY * np.pi
+        # WZ = WZ * np.pi
+
         target_fq = 1.0 / (QX**2 + QY**2 + QZ**2) * (1 - h_xyz(QX, QY, QZ)) * WX * WY * WZ
+        # scaling_factor = np.linalg.det(reciprocal_vectors_nlocal) / (2.**3) * (np.pi/max_L_infty)**3  # scale the weights Wx,Wy,Wz to match new  volume
+        scaling_factor = np.linalg.det(reciprocal_vectors_nlocal) /((2*np.pi)**3)
+        target_fq = target_fq * scaling_factor
         del WX, WY, WZ, QX, QY, QZ
 
         target_fq = np.nan_to_num(target_fq)
         target_fq = target_fq.ravel()
         target_fq = target_fq + 1j * np.zeros_like(target_fq)
 
-        QX_nufft_inp = QX_unscaled.ravel() * np.pi
-        QY_nufft_inp = QY_unscaled.ravel() * np.pi
-        QZ_nufft_inp = QZ_unscaled.ravel() * np.pi
+        # QX_nufft_inp = QX_unscaled.ravel() * np.pi
+        # QY_nufft_inp = QY_unscaled.ravel() * np.pi
+        # QZ_nufft_inp = QZ_unscaled.ravel() * np.pi
         del QX_unscaled, QY_unscaled, QZ_unscaled
 
         # Perform non-uniform FFT (NUFFT)
@@ -2340,7 +2377,8 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         # compute volume of Fourier cell of the nlocal BZs
         direct_vectors_nlocal = direct_vectors / N_local
-        vol_direct_nlocal = np.abs(np.dot(direct_vectors_nlocal[0], np.cross(direct_vectors_nlocal[1], direct_vectors_nlocal[2])))
+        # vol_direct_nlocal = np.abs(np.dot(direct_vectors_nlocal[0], np.cross(direct_vectors_nlocal[1], direct_vectors_nlocal[2])))
+        vol_direct_nlocal = np.linalg.det(direct_vectors_nlocal)
         VhR_cart = VhR_cart / vol_direct_nlocal
 
         # Compute 1d frequencies from finufft
@@ -2349,7 +2387,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         fft_grid_R = np.column_stack([RX.ravel(), RY.ravel(), RZ.ravel()])
         assert ((direct_vectors == direct_vectors.T).all())
         fft_grid_R = fft_grid_R @ (direct_vectors/N_local)
-        
+
         # del RX, RY, RZ
 
         # Find the indices of Ggrid_3d in fft_grid_R
@@ -2364,7 +2402,6 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # Keep values of VhR_cart at the found indices
         VhR_cart = VhR_cart[indices]
         assert (VhR_cart.shape[0] == Ggrid_3d.shape[0])
-
     if use_symm:
         # Find only positive octant of Ggrid_3d
         Ggrid_3d_unique = Ggrid_3d[(Ggrid_3d[:, 0] >= 0) & (Ggrid_3d[:, 1] >= 0) & (Ggrid_3d[:, 2] >= 0)]
@@ -2420,19 +2457,19 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
                 VR[k] = compute_integrals_h(k,Rvec,unique=False)
                 # VR_cart_ref[k] = 0
         
-        if nufft_gl:
-            VR = VR + VhR_cart
+
     else:
         if use_h:
             # VR = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d.shape[0]))
             for k in range(Ggrid_3d.shape[0]):
                 Rvec = Ggrid_3d[k, :]
                 print('Computing VR at element', k, 'Rvec:', Rvec)
-                VR[k] = compute_integrals_h(k,Rvec)
+                VR[k] = compute_integrals_h(k,Rvec,False)
         else:
             raise NotImplementedError("Using h(q) must be used for for non-symmetry case")
 
-
+    if nufft_gl and use_h:
+        VR = VR + VhR_cart
     coulR_end_time = time.time()
     print('Time taken for VhR build:', coulR_end_time - coulR_start_time)
     return VR
