@@ -2268,18 +2268,18 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         if nufft_gl:
             integral_cart = 0
-            vectorized = True
-            if vectorized:
-                integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                                            3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                                            relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
-                                            3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
-                                            relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
-                if unique:
-                    VhR_cart_ref_unique[k] = integral_cart_real + 1j * integral_cart_imag
-                else:
-                    VR_cart_ref[k] = integral_cart_real + 1j * integral_cart_imag
+            # vectorized = True
+            # if vectorized:
+            #     integral_cart_real = cubature(lambda xall: integrand_cart_h_handle_real(xall[:,0], xall[:,1], xall[:,2], Rvec),
+            #                                 3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+            #                                 relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+            #     integral_cart_imag = cubature(lambda xall: integrand_cart_h_handle_imag(xall[:,0], xall[:,1], xall[:,2], Rvec),
+            #                                 3, 1, [x_min, y_min, z_min], [x_max, y_max, z_max],
+            #                                 relerr=global_tol, abserr=global_tol, vectorized=vectorized)[0][0]
+            #     if unique:
+            #         VhR_cart_ref_unique[k] = integral_cart_real + 1j * integral_cart_imag
+            #     else:
+            #         VR_cart_ref[k] = integral_cart_real + 1j * integral_cart_imag
         else:
             vectorized = True
             if vectorized:

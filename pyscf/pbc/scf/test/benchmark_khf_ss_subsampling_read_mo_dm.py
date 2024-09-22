@@ -43,7 +43,31 @@ def nk_output_str(nk):
 def kecut_output_str(kecut):
     return '-kecut' + str(kecut)
 
+def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+         C 0.0 0.0 0.0
+         C 1.68516327271508 1.68516327271508 1.68516327271508
+        '''
+    cell.a = '''
+         0.0 3.370326545430162 3.370326545430162
+         3.370326545430162 0.0 3.370326545430162
+         3.370326545430162 3.370326545430162 0.0  
+        '''
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = {'C':'gth-szv'}
+    cell.precision = 1e-8
+    cell.pseudo = 'gth-pbe'
+    cell.ke_cutoff = kecut
+    cell.max_memory = 1000
 
+    cell.build()
+    cell.omega = 0
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
+    return cell, kpts
 def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -111,9 +135,9 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 
 
 wrap_around = True
-nkx = 3
+nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_diamond_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
 
 cell.build()
@@ -156,7 +180,7 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1,3]
+div_vector = [1,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
@@ -171,9 +195,10 @@ ss_params = {
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': True,
-    'nufft_gl': True,
+    'nufft_gl': False,
     'n_fft': 350,
     'M':ss_input['M'],
+    'vhR_symm': False,
 }
 
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",

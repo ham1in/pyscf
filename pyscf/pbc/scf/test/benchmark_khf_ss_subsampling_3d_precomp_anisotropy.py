@@ -139,7 +139,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
 
 cell.build()
