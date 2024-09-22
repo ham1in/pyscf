@@ -2347,9 +2347,9 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # Compute target function V(q)*(1-h(q))
 
         # # Scale weights for nufft input
-        # WX = WX * np.pi
-        # WY = WY * np.pi
-        # WZ = WZ * np.pi
+        WX = WX * np.pi
+        WY = WY * np.pi
+        WZ = WZ * np.pi
 
         target_fq = 1.0 / (QX**2 + QY**2 + QZ**2) * (1 - h_xyz(QX, QY, QZ)) * WX * WY * WZ
         # scaling_factor = np.linalg.det(reciprocal_vectors_nlocal) / (2.**3) * (np.pi/max_L_infty)**3  # scale the weights Wx,Wy,Wz to match new  volume
@@ -2376,10 +2376,10 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         VhR_cart = VhR_cart_3d.ravel(order='C') # To get z as fastest changing index
 
         # compute volume of Fourier cell of the nlocal BZs
-        direct_vectors_nlocal = direct_vectors / N_local
-        # vol_direct_nlocal = np.abs(np.dot(direct_vectors_nlocal[0], np.cross(direct_vectors_nlocal[1], direct_vectors_nlocal[2])))
-        vol_direct_nlocal = np.linalg.det(direct_vectors_nlocal)
-        VhR_cart = VhR_cart / vol_direct_nlocal
+        # direct_vectors_nlocal = direct_vectors / N_local
+        # # vol_direct_nlocal = np.abs(np.dot(direct_vectors_nlocal[0], np.cross(direct_vectors_nlocal[1], direct_vectors_nlocal[2])))
+        # vol_direct_nlocal = np.linalg.det(direct_vectors_nlocal)
+        # VhR_cart = VhR_cart / vol_direct_nlocal
 
         # Compute 1d frequencies from finufft
         R_array = np.arange(-nR_1d/2, nR_1d/2,dtype=int)
