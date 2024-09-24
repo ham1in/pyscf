@@ -137,7 +137,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 
 
 wrap_around = True
-nkx = 2
+nkx = 4
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
@@ -176,7 +176,7 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1,2]
+div_vector = [1,2,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
@@ -186,14 +186,14 @@ def localizer(q,r1,M=np.array([1,1,1])):
 # Setup ss_params dict
 ss_params = {
     'debug': False,
-    'r1_prefactor': 1.80,
-    'nlocal': 1,
+    'r1_prefactor': "precompute",
+    'nlocal': 3,
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': True,
     'nufft_gl': True,
     'n_fft': 350,
-    'vhR_symm': False,
+    'vhR_symm': True,
 }
 
 

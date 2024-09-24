@@ -132,10 +132,6 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                 print('Computing SqG anisotropy', file=f)
                 M = compute_SqG_anisotropy(cell=mf.cell, nk=nks, N_local=7)
 
-
-
-        
-
     # for div in div_vector:
     start_ind = 0
     if sanity_run:
@@ -179,23 +175,35 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             fourier_only = (khf_routine == "fourier")
 
             from pyscf.pbc.scf.khf import closest_fbz_distance
-            r1 = closest_fbz_distance(mf.cell.reciprocal_vectors(),ss_nlocal)
+            r1, (b1,b2) = closest_fbz_distance(mf.cell.reciprocal_vectors(),ss_nlocal)
+
+            # Find normalized perpendicular vector to closest plane vectors
+            reciprocal_vectors = mf.cell.reciprocal_vectors()
+            normal_vector = np.cross(reciprocal_vectors[b1], reciprocal_vectors[b2])
+            normal_vector /= np.linalg.norm(normal_vector)
+
+            # Find anisotropy in the direction of normal vector components
+            M_normal = np.dot(M, normal_vector)
 
             # M = np.array([1,1,1])
 
-            if ss_r1_prefactor == "precompute":
+            if ss_params['r1_prefactor'] == "precompute":
                 from pyscf.pbc.scf.khf import precompute_r1_prefactor
-                gamma = 1e-10
-                delta = 1e-2
+                gamma = 1e-4
+                delta = 0.5
                 power_law_exponent = -1
-                print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f)
+                print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f,flush=True)
                 nk_1d = nks[0]
-                ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent, nk_1d,delta,gamma,M,r1)
+                ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent,nk_1d,delta,gamma,M,r1,normal_vector)
+                print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
+                # # Override
+                # ss_params['r1_prefactor'] = ss_r1_prefactor
+
 
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, 
                                                                N_local=ss_params['nlocal'], debug=ss_params['debug'],
-                                                               localizer=ss_localizer_M, r1_prefactor=ss_params['r1_prefactor'], 
+                                                               localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor, 
                                                                fourier_only=fourier_only, subtract_nocc=ss_params['subtract_nocc'], 
                                                                nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'],
                                                                vhR_symm=ss_params['vhR_symm'])

@@ -136,7 +136,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
 
 
 wrap_around = True
-nkx = 2
+nkx = 4
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_diamond_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
@@ -190,5 +190,5 @@ M = compute_SqG_anisotropy(cell=mf.cell, nk=kmesh, N_local=7,dm_kpts=dm,mo_coeff
 
 results["M"] = M
 import pickle
-with open('ss_anisotropy_inputs.pkl', 'wb') as f:
+with open('diamond_444.pkl', 'wb') as f:
     pickle.dump(results, f)
