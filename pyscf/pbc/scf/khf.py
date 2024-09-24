@@ -1600,20 +1600,6 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     nks = np.array(nks)
     nocc = cell.tot_electrons() // 2
     nkpts = np.prod(nks)
-
-    #   compute standard exchange energy without any correction
-    # kmf.exxdiv = None
-    # if dm_kpts is None:
-    #     dm_kpts = kmf.make_rdm1()
-    # vk_kpts = kmf.get_k(kmf.cell, dm_kpts)
-    # e_ex = 1. / nkpts * np.einsum('kij,kji', dm_kpts, -0.5 * vk_kpts) * 0.5
-    # print(f"Exchange energy without any correction: {e_ex.real}")
-
-    #   compute the ewald correction
-    # xi = madelung(kmf.cell, kmf.kpts)
-    # e_ex_madelung = e_ex - nocc * xi
-    # print(f"Exchange energy with Madelung correction: {e_ex_madelung.real}")
-
     #   compute the singularity subtraction correction
 
     #   Step 1: compute the pair product in reciproal space
