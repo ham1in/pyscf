@@ -1544,25 +1544,24 @@ def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCe
 
     if debug_options:
         debug_options['filetype'] = debug_options.get('filetype', 'mat')
-        if debug_options['filetype'] == 'mat':
+        if 'mat' in debug_options['filetype']:
             print('Saving qG mat files requested')
             scipy.io.savemat('qG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"qG_full": qG_full})
             scipy.io.savemat('SqG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"SqG_full": SqG_full})
-            raise ValueError('Debugging requested, halting calculation')
-        elif debug_options['filetype'] == 'pkl':
+        if 'pkl' in debug_options['filetype']:
             print('Saving qG pkl files requested')
             import pickle
-            with open('qG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
-                pickle.dump(qG_full, f)
-            with open('SqG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
-                pickle.dump(SqG_full, f)
-            raise ValueError('Debugging requested, halting calculation')
+            with open('qGrid_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
+                pickle.dump(qGrid, f)
+            with open('SqG_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
+                pickle.dump(SqG, f)
+        raise ValueError('Debugging requested, halting calculation')
 
     return SqG
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, 
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=False, 
-              full_domain=True,nufft_gl=True,n_fft=400,vhR_symm=True):
+              full_domain=True,nufft_gl=True,n_fft=400,vhR_symm=True, SqG_filename = None):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1700,7 +1699,14 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
 
     #     raise ValueError('Debugging requested, halting calculation')
 
-    SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options={})
+    if SqG_filename is not None:
+        # Read SqG from pkl file
+        import pickle
+        print('Reading SqG from pkl file: ', SqG_filename)
+        with open(SqG_filename, 'rb') as f:
+            SqG = pickle.load(f)
+    else:
+        SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options={})
 
     # SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
     if subtract_nocc:

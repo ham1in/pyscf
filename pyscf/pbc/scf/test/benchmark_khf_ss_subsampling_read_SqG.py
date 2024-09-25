@@ -68,7 +68,6 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
-
 def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -151,8 +150,15 @@ mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
-e1 = mf.kernel()
-dm = mf.make_rdm1()
+
+# Read dm and mo_coeff from pkl file   
+import pickle
+with open('diamond_222.pkl', 'rb') as f:
+# with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
+    ss_input = pickle.load(f)
+
+dm = np.array(ss_input['dm_kpts'])
+mo_coeff = np.array(ss_input['mo_coeff_kpts'])
 
 # Regular energy components
 
@@ -175,54 +181,28 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-# div_vector = [2,2]
-from pyscf.pbc.scf.khf import build_SqG, minimum_image,make_ss_inputs
+div_vector = [1,2]
 
-mf.exxdiv = None # so that standard energy is computed without madelung
+import pyscf.pbc.scf.ss_localizers as ss_localizers
+# localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+def localizer(q,r1,M=np.array([1,1,1])):
+    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 
-# Store output from make_ss_inputs in a numpy file
-results = {
-    'mo_coeff_kpts': np.array(mf.mo_coeff_kpts),
-    'dm_kpts': np.array(dm),
+# Setup ss_params dict
+ss_params = {
+    'debug': False,
+    'r1_prefactor': "precompute",
+    'nlocal': 3,
+    'localizer': localizer,
+    'subtract_nocc': True,
+    'use_sqG_anisotropy': True,
+    'nufft_gl': True,
+    'n_fft': 350,
+    'M':ss_input['M'],
+    'vhR_symm': False,
+    'SqG_filenames':['SqG_nk222.pkl',None]
 }
 
 
-# Load all info
-cell = mf.cell
-kpts = mf.kpts
-nks = np.array(kmesh)
-nocc = cell.tot_electrons() // 2
-nkpts = np.prod(nks)
-
-Lvec_real = mf.cell.lattice_vectors()
-NsCell = mf.cell.mesh
-L_delta = Lvec_real / NsCell[:, None]
-dvol = np.abs(np.linalg.det(L_delta))
-xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
-mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
-rptGrid3D = mesh_idx @ L_delta
-qGrid = minimum_image(cell, kpts - kpts[0, :])
-kGrid = minimum_image(cell, kpts)
-
-Lvec_recip = cell.reciprocal_vectors()
-Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
-Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
-Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
-Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
-GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
- 
-#   Step 1.3: evaluate MO periodic component on a real fine mesh in unit cell
-nbands = nocc
-nG = np.prod(NsCell)
-
-E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mf.mo_coeff_kpts)
-debug_options = {'filetype':['pkl','mat']}
-SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options=debug_options)
-
-
-
-
-# results["M"] = M
-# import pickle
-# with open('diamond_444.pkl', 'wb') as f:
-#     pickle.dump(results, f)
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
+                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mo_coeff, dm_kpts=dm)

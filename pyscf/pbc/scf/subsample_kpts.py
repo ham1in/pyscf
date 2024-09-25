@@ -118,8 +118,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
         # Unpack params
         ss_localizer = ss_params['localizer']
         ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
-        ss_nlocal = ss_params['nlocal']
-        ss_r1_prefactor = ss_params['r1_prefactor']
+        ss_nlocal = ss_params.get('nlocal', 3)
+        ss_r1_prefactor = ss_params.get('r1_prefactor', 1.0)
+        ss_SqG_filenames = ss_params.get('SqG_filenames', [None]*len(div_vector))
         M = np.array([1,1,1])
 
         if ss_params['use_sqG_anisotropy']:
@@ -136,6 +137,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     start_ind = 0
     if sanity_run:
         start_ind = -1
+    k=0
     for j in range(start_ind, len(div_vector)):
         if j == -1:
             div = 1
@@ -199,14 +201,13 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                 # # Override
                 # ss_params['r1_prefactor'] = ss_r1_prefactor
 
-
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, 
                                                                N_local=ss_params['nlocal'], debug=ss_params['debug'],
                                                                localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor, 
                                                                fourier_only=fourier_only, subtract_nocc=ss_params['subtract_nocc'], 
                                                                nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'],
-                                                               vhR_symm=ss_params['vhR_symm'])
+                                                               vhR_symm=ss_params['vhR_symm'],SqG_filename=ss_SqG_filenames[k])
 
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
@@ -260,6 +261,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             results["nks_list"].append(copy.copy(nks))
 
         kpts_div_old = kpts_div
+        k = k + 1
 
     print('=== Kpoint Subsampling Results === ')
     for key, value in results.items():
