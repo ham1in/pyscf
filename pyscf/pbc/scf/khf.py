@@ -1544,18 +1544,20 @@ def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCe
 
     if debug_options:
         debug_options['filetype'] = debug_options.get('filetype', 'mat')
+        debug_options['prefix'] = debug_options.get('prefix', '')
+
         if 'mat' in debug_options['filetype']:
             print('Saving qG mat files requested')
-            scipy.io.savemat('qG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"qG_full": qG_full})
-            scipy.io.savemat('SqG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"SqG_full": SqG_full})
+            scipy.io.savemat(debug_options['prefix'] + 'qG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"qG_full": qG_full})
+            scipy.io.savemat(debug_options['prefix'] + 'SqG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"SqG_full": SqG_full})
         if 'pkl' in debug_options['filetype']:
             print('Saving qG pkl files requested')
             import pickle
-            with open('qGrid_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
+            with open(debug_options['prefix']+'qGrid_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
                 pickle.dump(qGrid, f)
-            with open('SqG_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
+            with open(debug_options['prefix']+'SqG_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
                 pickle.dump(SqG, f)
-        raise ValueError('Debugging requested, halting calculation')
+        # raise ValueError('Debugging requested, halting calculation')
 
     return SqG
 

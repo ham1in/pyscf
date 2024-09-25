@@ -177,8 +177,17 @@ mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
-e1 = mf.kernel()
-dm = mf.make_rdm1()
+# e1 = mf.kernel()
+# dm = mf.make_rdm1()
+
+
+# Read dm and mo_coeff from pkl file   
+import pickle
+with open('Si_444.pkl', 'rb') as f: # change me
+    ss_input = pickle.load(f)
+
+dm = np.array(ss_input['dm_kpts'])
+mo_coeff = np.array(ss_input['mo_coeff_kpts'])
 
 # Regular energy components
 
@@ -205,13 +214,6 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 from pyscf.pbc.scf.khf import build_SqG, minimum_image,make_ss_inputs
 
 mf.exxdiv = None # so that standard energy is computed without madelung
-
-# Store output from make_ss_inputs in a numpy file
-results = {
-    'mo_coeff_kpts': np.array(mf.mo_coeff_kpts),
-    'dm_kpts': np.array(dm),
-}
-
 
 # Load all info
 cell = mf.cell
@@ -241,8 +243,12 @@ GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1
 nbands = nocc
 nG = np.prod(NsCell)
 
-E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mf.mo_coeff_kpts)
-debug_options = {'filetype':['pkl','mat']}
+E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mo_coeff)
+debug_options = {
+    'filetype':['pkl','mat'],
+    'prefix':"Si_" # change me
+}
+
 SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options=debug_options)
 
 
