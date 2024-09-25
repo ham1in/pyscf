@@ -134,11 +134,37 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
 
+def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+Si  0.00000000000   0.00000000000   0.00000000000
+Si  2.57177646209   2.57177646209   2.57177646209
+        '''
 
+              
+    cell.a = '''
+5.14355292417   5.14355292417   0.00000000000
+5.14355292417   0.00000000000   5.14355292417
+0.00000000000   5.14355292417   5.14355292417
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv-molopt-sr'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 240000
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
 wrap_around = True
-nkx = 2
+nkx = 4
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_Si_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
 cell.dimension = 3
 
 cell.build()

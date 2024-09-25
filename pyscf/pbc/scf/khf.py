@@ -2442,7 +2442,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         target_fq = 1.0 / (QX**2 + QY**2 + QZ**2) * (1 - h_xyz(QX, QY, QZ)) * WX * WY * WZ
         # scaling_factor = np.linalg.det(reciprocal_vectors_nlocal) / (2.**3) * (np.pi/max_L_infty)**3  # scale the weights Wx,Wy,Wz to match new  volume
-        scaling_factor = np.linalg.det(reciprocal_vectors_nlocal) /((2*np.pi)**3)
+        scaling_factor = np.abs(np.linalg.det(reciprocal_vectors_nlocal)) /((2*np.pi)**3)
         target_fq = target_fq * scaling_factor
         del WX, WY, WZ, QX, QY, QZ
 
