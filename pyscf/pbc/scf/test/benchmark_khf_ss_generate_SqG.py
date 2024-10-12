@@ -144,15 +144,15 @@ Si  2.57177646209   2.57177646209   2.57177646209
 
               
     cell.a = '''
-5.14355292417   5.14355292417   0.00000000000
-5.14355292417   0.00000000000   5.14355292417
 0.00000000000   5.14355292417   5.14355292417
+5.14355292417   0.00000000000   5.14355292417
+5.14355292417   5.14355292417   0.00000000000
         '''
 
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
@@ -161,6 +161,8 @@ Si  2.57177646209   2.57177646209   2.57177646209
     cell.build()
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
+
+
 wrap_around = True
 nkx = 4
 kmesh = [nkx, nkx, nkx]
@@ -183,7 +185,7 @@ mf.exxdiv = 'ewald'
 
 # Read dm and mo_coeff from pkl file   
 import pickle
-with open('Si_444.pkl', 'rb') as f: # change me
+with open('Si_444_right_no-molopt.pkl', 'rb') as f: # change me
     ss_input = pickle.load(f)
 
 dm = np.array(ss_input['dm_kpts'])
@@ -246,7 +248,7 @@ nG = np.prod(NsCell)
 E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mo_coeff)
 debug_options = {
     'filetype':['pkl','mat'],
-    'prefix':"Si_" # change me
+    'prefix':"Si_right_no-molopt_" # change me
 }
 
 SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options=debug_options)

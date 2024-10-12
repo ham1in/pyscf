@@ -1488,8 +1488,8 @@ def closest_fbz_distance(Lvec_recip,N_local):
     return r1, pairs[np.argmin(distances)]
 
 
-def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
     import pymp
+def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
     import os
     import numpy as np
     import scipy.io
@@ -1563,7 +1563,7 @@ def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCe
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False, 
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=False, 
-              full_domain=True,nufft_gl=True,n_fft=400,vhR_symm=True, SqG_filename = None):
+              full_domain=True,nufft_gl=True,n_fft=400,vhR_symm=True, H_use_unscaled = False, SqG_filename = None):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1769,8 +1769,12 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     #   Kernel from Fourier Interpolation
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     cart_sphr_split = True
-    H = lambda q: localizer(q,r1_prefactor * r1)
-
+    if H_use_unscaled:
+        r1 = N_local/2. # in the basis of reciprocal vectors now.
+        H = lambda q: localizer(q,r1_prefactor * r1)
+    else:
+        H = lambda q: localizer(q,r1_prefactor * r1)
+        
     if full_domain:
         from scipy.optimize import root_scalar
 
@@ -1821,7 +1825,12 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
         qG = qpt[None, :] + GptGrid3D_local
         exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
         tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
-        tmp = SqG_local[iq, :].T * H(qG) * tmp
+        if H_use_unscaled:
+            qG_unscaled = qG @ np.linalg.inv(Lvec_recip)
+            tmp = SqG_local[iq, :].T * H(qG_unscaled) * tmp
+        else:
+            tmp = SqG_local[iq, :].T * H(qG) * tmp
+
         ss_correction += np.real(np.sum(tmp))
 
     int_terms = bz_dvol * prefactor_ex*4*np.pi*ss_correction
@@ -1833,7 +1842,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=7, debug=False,
     #   Quadrature with Coulomb kernel
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGrid3D_local
-        tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
+        if H_use_unscaled:
+            qG_unscaled = qG @ np.linalg.inv(Lvec_recip)
+            tmp = SqG_local[iq, :].T * H(qG_unscaled) / np.sum(qG ** 2, axis=1)
+        else:
+            tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
 
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
         ss_correction -= np.sum(tmp)

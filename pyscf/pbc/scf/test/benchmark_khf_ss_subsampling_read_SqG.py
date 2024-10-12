@@ -133,6 +133,8 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
 
+
+
 def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -143,15 +145,15 @@ Si  2.57177646209   2.57177646209   2.57177646209
 
               
     cell.a = '''
-5.14355292417   5.14355292417   0.00000000000
-5.14355292417   0.00000000000   5.14355292417
 0.00000000000   5.14355292417   5.14355292417
+5.14355292417   0.00000000000   5.14355292417
+5.14355292417   5.14355292417   0.00000000000
         '''
 
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
@@ -179,7 +181,7 @@ mf.exxdiv = 'ewald'
 
 # Read dm and mo_coeff from pkl file   
 import pickle
-with open('Si_444.pkl', 'rb') as f:
+with open('Si_444_right_no-molopt.pkl', 'rb') as f:
 # with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
     ss_input = pickle.load(f)
 
@@ -214,19 +216,21 @@ import pyscf.pbc.scf.ss_localizers as ss_localizers
 def localizer(q,r1,M=np.array([1,1,1])):
     return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 
+# localizer = lambda q,r1,M: ss_localizers.localizer_gauss(q,r1)
 # Setup ss_params dict
 ss_params = {
     'debug': False,
-    'r1_prefactor': 1.5,
+    'r1_prefactor': 1.0,
     'nlocal': 3,
     'localizer': localizer,
     'subtract_nocc': True,
-    'use_sqG_anisotropy': True,
+    'use_sqG_anisotropy': False,
     'nufft_gl': True,
     'n_fft': 350,
     'M':ss_input['M'],
     'vhR_symm': False,
-    'SqG_filenames':['SqG_nk444.pkl',None, None]
+    'SqG_filenames':['Si_right_no-molopt_SqG_nk444.pkl',None, None],
+    'H_use_unscaled': True,
 }
 
 

@@ -87,3 +87,4 @@ tmp/
 #PySCF temp files
 tmp*
 *mat
+*pkl

@@ -120,6 +120,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
         ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
         ss_nlocal = ss_params.get('nlocal', 3)
         ss_r1_prefactor = ss_params.get('r1_prefactor', 1.0)
+        ss_H_use_unscaled = ss_params.get('H_use_unscaled', False)  
         ss_SqG_filenames = ss_params.get('SqG_filenames', [None]*len(div_vector))
         M = np.array([1,1,1])
 
@@ -207,7 +208,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                                                                localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor, 
                                                                fourier_only=fourier_only, subtract_nocc=ss_params['subtract_nocc'], 
                                                                nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'],
-                                                               vhR_symm=ss_params['vhR_symm'],SqG_filename=ss_SqG_filenames[k])
+                                                               vhR_symm=ss_params['vhR_symm'],H_use_unscaled=ss_H_use_unscaled,
+                                                               SqG_filename=ss_SqG_filenames[k])
 
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
@@ -232,8 +234,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             fourinterp = (khf_routine == "stagger_nonscf_fourier")
             Ek_stagger_M, Ek_stagger, Ek_madelung = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
                                                                 df_type=df_type, dm_kpts=dm_kpts,
-                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp,
-                                                                N_local=ss_nlocal)
+                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_stagger_list"].append(Ek_stagger_M)

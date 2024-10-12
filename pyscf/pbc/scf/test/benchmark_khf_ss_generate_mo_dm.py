@@ -107,15 +107,15 @@ Si  2.57177646209   2.57177646209   2.57177646209
 
               
     cell.a = '''
-5.14355292417   5.14355292417   0.00000000000
-5.14355292417   0.00000000000   5.14355292417
 0.00000000000   5.14355292417   5.14355292417
+5.14355292417   0.00000000000   5.14355292417
+5.14355292417   5.14355292417   0.00000000000
         '''
 
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
@@ -218,5 +218,5 @@ M = compute_SqG_anisotropy(cell=mf.cell, nk=kmesh, N_local=7,dm_kpts=dm,mo_coeff
 
 results["M"] = M
 import pickle
-with open('Si_444.pkl', 'wb') as f:
+with open('Si_444_right_no-molopt.pkl', 'wb') as f:
     pickle.dump(results, f)
