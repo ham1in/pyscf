@@ -191,16 +191,29 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             # M = np.array([1,1,1])
 
             if ss_params['r1_prefactor'] == "precompute":
-                from pyscf.pbc.scf.khf import precompute_r1_prefactor
-                gamma = 1e-4
-                delta = 0.5
-                power_law_exponent = -1
-                print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f,flush=True)
-                nk_1d = nks[0]
-                ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent,nk_1d,delta,gamma,M,r1,normal_vector)
-                print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
-                # # Override
-                # ss_params['r1_prefactor'] = ss_r1_prefactor
+                if ss_H_use_unscaled:
+                    from pyscf.pbc.scf.khf import precompute_r1_prefactor
+                    gamma = 1e-4
+                    delta = 0.5
+                    power_law_exponent = -1
+                    print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f,flush=True)
+                    nk_1d = nks[0]
+                    normal_vector = np.array([1,0,0])
+                    M = np.array([1,1,1])
+                    r1 = ss_nlocal/2. # now working in the basis of reciprocal lattice vectors
+                    ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent,nk_1d,delta,gamma,M,r1,normal_vector)
+                    print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
+                else:
+                    from pyscf.pbc.scf.khf import precompute_r1_prefactor
+                    gamma = 1e-4
+                    delta = 0.5
+                    power_law_exponent = -1
+                    print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f,flush=True)
+                    nk_1d = nks[0]
+                    ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent,nk_1d,delta,gamma,M,r1,normal_vector)
+                    print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
+                    # # Override
+                    # ss_params['r1_prefactor'] = ss_r1_prefactor
 
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, 

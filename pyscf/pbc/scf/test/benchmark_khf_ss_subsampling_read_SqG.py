@@ -220,7 +220,7 @@ def localizer(q,r1,M=np.array([1,1,1])):
 # Setup ss_params dict
 ss_params = {
     'debug': False,
-    'r1_prefactor': 1.0,
+    'r1_prefactor': "precompute",
     'nlocal': 3,
     'localizer': localizer,
     'subtract_nocc': True,

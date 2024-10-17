@@ -68,7 +68,6 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
-
 def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -97,34 +96,6 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
-def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom='''
-Si  0.00000000000   0.00000000000   0.00000000000
-Si  2.57177646209   2.57177646209   2.57177646209
-        '''
-
-              
-    cell.a = '''
-0.00000000000   5.14355292417   5.14355292417
-5.14355292417   0.00000000000   5.14355292417
-5.14355292417   5.14355292417   0.00000000000
-        '''
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = 'gth-szv'
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    #cell.ke_cutoff = 55.13
-    cell.ke_cutoff = kecut
-    cell.max_memory = 240000
-    cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
-    return cell, kpts
-
 
 def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell = pbcgto.Cell()
@@ -179,8 +150,15 @@ mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
-e1 = mf.kernel()
-dm = mf.make_rdm1()
+
+# Read dm and mo_coeff from pkl file   
+import pickle
+with open('diamond_nk222.pkl', 'rb') as f:
+# with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
+    ss_input = pickle.load(f)
+
+dm = np.array(ss_input['dm_kpts'])
+mo_coeff = np.array(ss_input['mo_coeff_kpts'])
 
 # Regular energy components
 
@@ -203,20 +181,9 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-# div_vector = [2,2]
-from pyscf.pbc.scf.khf import compute_SqG_anisotropy
+div_vector = [1,2]
 
-mf.exxdiv = None  #so that standard energy is computed without madelung
-
-# Store output from make_ss_inputs in a numpy file
-results = {
-    'mo_coeff_kpts': np.array(mf.mo_coeff_kpts),
-    'dm_kpts': np.array(dm),
-}
-
-M = compute_SqG_anisotropy(cell=mf.cell, nk=kmesh, N_local=7,dm_kpts=dm,mo_coeff_kpts=mf.mo_coeff_kpts)
-
-results["M"] = M
-import pickle
-with open('diamond_nk222.pkl', 'wb') as f:
-    pickle.dump(results, f)
+# results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
+#                          wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mo_coeff, dm_kpts=dm)
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf",sanity_run=False,
+                         df_type=df_type,mo_coeff_kpts=mo_coeff,dm_kpts=dm)

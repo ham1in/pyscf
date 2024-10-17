@@ -20,6 +20,7 @@
 import unittest
 import tempfile
 import numpy as np
+
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
 from pyscf.pbc.scf.subsample_kpts import subsample_kpts
@@ -28,7 +29,7 @@ from pyscf import lib
 import os
 
 cwd = os.getcwd()
-nthreads = 24
+nthreads = 16
 os.environ['OMP_NUM_THREADS'] = str(nthreads)
 os.environ['MKL_NUM_THREADS'] = str(nthreads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(nthreads)
@@ -43,6 +44,36 @@ def nk_output_str(nk):
 def kecut_output_str(kecut):
     return '-kecut' + str(kecut)
 
+
+def build_bn_hex_cell(nk=(1, 1, 1), kecut=100):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom = '''
+        B   2.36527819806   1.36559400436   1.96955217648
+        B   2.36527819806   -1.36559400436  5.90865652944
+        N   2.36527819806   1.36559400436   5.90865652944
+        N   2.36527819806   -1.36559400436  1.96955217648
+
+        '''
+    cell.a = '''
+        2.37390045859   -4.11171620638  0.00000000000
+        2.37390045859   4.11171620638   0.00000000000
+        0.00000000000   0.00000000000   14.56461897153
+
+        '''
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+
+    cell.ke_cutoff = kecut
+    cell.max_memory = 1000
+    cell.precision = 1e-8
+
+    kpts = cell.make_kpts(nk, wrap_around=True)
+    return cell, kpts
 def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -68,105 +99,10 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
-
-def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom = '''
-        B   2.36527819806   1.36559400436   1.96955217648
-        N   2.36527819806   -1.36559400436  1.96955217648
-
-        '''
-    cell.a = '''
-        2.37390045859   -4.11171620638  0.00000000000
-        2.37390045859   4.11171620638   0.00000000000
-        0.00000000000   0.00000000000   14.56461897153
-
-        '''
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-
-    cell.basis = 'gth-szv'
-    cell.pseudo = 'gth-pbe'
-
-    cell.ke_cutoff = kecut
-    cell.max_memory = 1000
-    cell.precision = 1e-8
-    cell.dimension = 3
-
-    kpts = cell.make_kpts(nk, wrap_around=True)
-    return cell, kpts
-def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom='''
-Si  0.00000000000   0.00000000000   0.00000000000
-Si  2.57177646209   2.57177646209   2.57177646209
-        '''
-
-              
-    cell.a = '''
-0.00000000000   5.14355292417   5.14355292417
-5.14355292417   0.00000000000   5.14355292417
-5.14355292417   5.14355292417   0.00000000000
-        '''
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = 'gth-szv'
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    #cell.ke_cutoff = 55.13
-    cell.ke_cutoff = kecut
-    cell.max_memory = 240000
-    cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
-    return cell, kpts
-
-
-def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
-    cell = pbcgto.Cell()
-    cell.atom='''
-        H 3.00   3.00   2.10
-        H 3.00   3.00   3.90
-        '''
-    cell.a = '''
-        6.0   0.0   0.0
-        0.0   6.0   0.0
-        0.0   0.0   6.0
-        '''
-    # cell.atom='''
-    #     H 1.50   1.50   2.10
-    #     H 1.50   1.50   3.90
-    #     '''
-    # cell.a = '''
-    #     3.0   0.0   0.0
-    #     0.0   3.0   0.0
-    #     0.0   0.0   24.0
-    #     '''
-    cell.unit = 'B'
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = {'H':'gth-szv'}
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    cell.dimension = 3
-    cell.ke_cutoff = kecut
-    cell.max_memory = 5000
-    cell.build()
-    cell.omega = 0
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
-    return cell, kpts
-
-
-wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+cell, kpts= build_diamond_cell(nk=kmesh,kecut=56)
+
 cell.dimension = 3
 
 cell.build()
@@ -203,20 +139,32 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-# div_vector = [2,2]
-from pyscf.pbc.scf.khf import compute_SqG_anisotropy
+# Subsample 8 kpts
 
-mf.exxdiv = None  #so that standard energy is computed without madelung
 
-# Store output from make_ss_inputs in a numpy file
-results = {
-    'mo_coeff_kpts': np.array(mf.mo_coeff_kpts),
-    'dm_kpts': np.array(dm),
-}
+div_vector = [1,2]
 
-M = compute_SqG_anisotropy(cell=mf.cell, nk=kmesh, N_local=7,dm_kpts=dm,mo_coeff_kpts=mf.mo_coeff_kpts)
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type)
 
-results["M"] = M
-import pickle
-with open('diamond_nk222.pkl', 'wb') as f:
-    pickle.dump(results, f)
+# print('=== Kpoint Subsampling Results === ')
+
+# print('\nnk list')
+# print(nk_list)
+# print('\nnks list')
+# print(nks_list)
+# print('\nEk list')
+# print(Ek_list)
+
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf",df_type=df_type)
+
+
+# print('=== Kpoint Subsampling Results (with Stagger) === ')
+
+# print('\nnk list')
+# print(nk_list)
+# print('\nnks list')
+# print(nks_list)
+# print('\nEk list')
+# print(Ek_list)
+
+
