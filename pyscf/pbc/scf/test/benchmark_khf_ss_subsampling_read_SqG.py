@@ -268,6 +268,7 @@ ss_params = {
     'delta':0.75,
     'gamma':1e-8,
     'r1_power_law_exponent':-2,
+    'r1_power_law_start':1
 }
 
 

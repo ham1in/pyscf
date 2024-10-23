@@ -1449,7 +1449,7 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=No
 
     return sigma
 
-def precompute_r1_prefactor(power_law_exponent,Nk,delta,gamma,M,r1,normal_vector):
+def precompute_r1_prefactor(power_law_start,power_law_exponent,Nk,delta,gamma,M,r1,normal_vector):
     # # scaled_normal_vector = normal_vector*r1
     # qx = scaled_normal_vector[0]
     # qy = scaled_normal_vector[1]
@@ -1458,12 +1458,14 @@ def precompute_r1_prefactor(power_law_exponent,Nk,delta,gamma,M,r1,normal_vector
     # r1 is the minimum distance from the center of the BZ to the boundary
     r1_prefactor_max = (-np.log(delta)/4)**(-1./2.) * np.sqrt(np.dot(exp_term,exp_term))
     r1_prefactor_min = (-np.log(gamma)/4)**(-1./2.) * np.sqrt(np.dot(exp_term,exp_term))
-    def compute_r1_power_law(r1_max,r1_min,exponent,nk_1d):
-        a = (r1_max-r1_min)*2**(-exponent)
+
+    def compute_r1_power_law(start,r1_max,r1_min,exponent,nk_1d):
+        a = (r1_max-r1_min)*start**(-exponent)
         nk_1d = nk_1d.astype('float64')
-        assert(exponent<0)
+        assert (exponent<0)
         return a*(nk_1d)**exponent + r1_min
-    r1_prefactor_comp = compute_r1_power_law(r1_prefactor_max,r1_prefactor_min,power_law_exponent,Nk)
+
+    r1_prefactor_comp = compute_r1_power_law(power_law_start,r1_prefactor_max,r1_prefactor_min,power_law_exponent,Nk)
     # print(f'Precomputed r1 prefactor is {r1_prefactor_comp:.3f}')
     return r1_prefactor_comp
 

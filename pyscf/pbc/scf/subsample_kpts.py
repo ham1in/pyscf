@@ -125,6 +125,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
         ss_gamma = ss_params.get('gamma', 1e-4)
         ss_delta = ss_params.get('delta', 0.5)
         ss_r1_power_law_exponent = ss_params.get('r1_power_law_exponent', -1)
+        ss_r1_power_law_start = ss_params.get('r1_power_law_start', 1)
         M = np.array([1,1,1])
 
         if ss_params['use_sqG_anisotropy']:
@@ -203,7 +204,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                     normal_vector = np.array([1,0,0])
                     M = np.array([1,1,1])
                     r1 = ss_nlocal/2.
-                ss_r1_prefactor = precompute_r1_prefactor(ss_r1_power_law_exponent,nk_1d,ss_delta,ss_gamma,M,r1,normal_vector)
+                ss_r1_prefactor = precompute_r1_prefactor(ss_r1_power_law_start,ss_r1_power_law_exponent,nk_1d,ss_delta,ss_gamma,M,r1,normal_vector)
                 print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
 
             if mf.cell.dimension ==3:
