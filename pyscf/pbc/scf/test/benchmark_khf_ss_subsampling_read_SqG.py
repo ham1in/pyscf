@@ -162,12 +162,46 @@ Si  2.57177646209   2.57177646209   2.57177646209
     cell.build()
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
+
+def build_phosphorous_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+P   0.0000000   12.3073329  7.8236391
+P   3.1137830   18.6749386  0.7625871
+P   0.0000000   18.6749386  3.5305260
+P   3.1137830   12.3073329  5.0557003
+P   3.1137830   1.9799090   7.8236391
+P   0.0000000   8.3475148   0.7625871
+P   3.1137830   8.3475148   3.5305260
+P   0.0000000   1.9799090   5.0557003
+        '''
+
+              
+    cell.a = '''
+6.227566008270  0.000000000000  0.000000000000
+0.000000000000  20.654847635604 0.000000000000
+0.000000000000  0.000000000000  8.586226257151
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 120000
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
+
 wrap_around = True
 nkx = 4
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_Si_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
-
 cell.build()
 
 print('Kmesh:', kmesh)
@@ -181,7 +215,7 @@ mf.exxdiv = 'ewald'
 
 # Read dm and mo_coeff from pkl file   
 import pickle
-with open('Si_444_right_no-molopt.pkl', 'rb') as f:
+with open('phosphorous-compute_dm_mo-nk444.pkl', 'rb') as f:
 # with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
     ss_input = pickle.load(f)
 
@@ -229,8 +263,11 @@ ss_params = {
     'n_fft': 350,
     'M':ss_input['M'],
     'vhR_symm': False,
-    'SqG_filenames':['Si_right_no-molopt_SqG_nk444.pkl',None, None],
+    'SqG_filenames':['phosphorous_SqG_nk444.pkl',None, None],
     'H_use_unscaled': True,
+    'delta':0.75,
+    'gamma':1e-8,
+    'r1_power_law_exponent':-2,
 }
 
 

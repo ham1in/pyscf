@@ -122,6 +122,9 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
         ss_r1_prefactor = ss_params.get('r1_prefactor', 1.0)
         ss_H_use_unscaled = ss_params.get('H_use_unscaled', False)  
         ss_SqG_filenames = ss_params.get('SqG_filenames', [None]*len(div_vector))
+        ss_gamma = ss_params.get('gamma', 1e-4)
+        ss_delta = ss_params.get('delta', 0.5)
+        ss_r1_power_law_exponent = ss_params.get('r1_power_law_exponent', -1)
         M = np.array([1,1,1])
 
         if ss_params['use_sqG_anisotropy']:
@@ -191,29 +194,17 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             # M = np.array([1,1,1])
 
             if ss_params['r1_prefactor'] == "precompute":
+                from pyscf.pbc.scf.khf import precompute_r1_prefactor
+                # print('Using power law exponent {0} for r1_prefactor '.format(ss_r1_power_law_exponent), file=f,flush=True)
+                print('r1 precompute requested, gamma = {0}, delta = {1}, r1_power_law_exponent = {2}'.format(ss_gamma,ss_delta,ss_r1_power_law_exponent), file=f,flush=True)
+                nk_1d = nks[0]
                 if ss_H_use_unscaled:
-                    from pyscf.pbc.scf.khf import precompute_r1_prefactor
-                    gamma = 1e-4
-                    delta = 0.5
-                    power_law_exponent = -1
-                    print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f,flush=True)
-                    nk_1d = nks[0]
+                    # now working in the basis of reciprocal lattice vectors. Override settings
                     normal_vector = np.array([1,0,0])
                     M = np.array([1,1,1])
-                    r1 = ss_nlocal/2. # now working in the basis of reciprocal lattice vectors
-                    ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent,nk_1d,delta,gamma,M,r1,normal_vector)
-                    print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
-                else:
-                    from pyscf.pbc.scf.khf import precompute_r1_prefactor
-                    gamma = 1e-4
-                    delta = 0.5
-                    power_law_exponent = -1
-                    print('Using power law exponent {0} for r1_prefactor '.format(power_law_exponent), file=f,flush=True)
-                    nk_1d = nks[0]
-                    ss_r1_prefactor = precompute_r1_prefactor(power_law_exponent,nk_1d,delta,gamma,M,r1,normal_vector)
-                    print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
-                    # # Override
-                    # ss_params['r1_prefactor'] = ss_r1_prefactor
+                    r1 = ss_nlocal/2.
+                ss_r1_prefactor = precompute_r1_prefactor(ss_r1_power_law_exponent,nk_1d,ss_delta,ss_gamma,M,r1,normal_vector)
+                print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
 
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, 
