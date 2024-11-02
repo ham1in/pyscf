@@ -1490,12 +1490,12 @@ def closest_fbz_distance(Lvec_recip,N_local):
     return r1, pairs[np.argmin(distances)]
 
 
-    import pymp
 def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
     import os
     import numpy as np
     import scipy.io
     import time
+    import pymp
 
     build_SqG_start_time = time.time()
     SqG = pymp.shared.array((nkpts, nG), dtype=np.float64)
@@ -1706,9 +1706,15 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     if SqG_filename is not None:
         # Read SqG from pkl file
         import pickle
-        print('Reading SqG from pkl file: ', SqG_filename)
-        with open(SqG_filename, 'rb') as f:
-            SqG = pickle.load(f)
+        print('Reading SqG from file: ', SqG_filename)
+        if SqG_filename.split('.')[-1] == 'pkl':
+            with open(SqG_filename, 'rb') as f:
+                SqG = pickle.load(f)
+        elif SqG_filename.split('.')[-1] == 'mat':
+            import scipy.io
+            SqG_full = scipy.io.loadmat(SqG_filename)['SqG_full'][0]
+            SqG = np.zeros((nkpts, nG))
+            SqG = SqG_full.reshape(nkpts, nG, order='C')
     else:
         SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options={})
 
@@ -1772,8 +1778,8 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     cart_sphr_split = True
     if H_use_unscaled:
-        r1 = N_local/2. # in the basis of reciprocal vectors now.
-        H = lambda q: localizer(q,r1_prefactor * r1)
+        r1_unscaled = N_local/2. # in the basis of reciprocal vectors now.
+        H = lambda q: localizer(q,r1_prefactor * r1_unscaled)
     else:
         H = lambda q: localizer(q,r1_prefactor * r1)
         

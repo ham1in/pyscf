@@ -198,7 +198,7 @@ P   0.0000000   1.9799090   5.0557003
     return cell, kpts
 
 wrap_around = True
-nkx = 4
+nkx = 2
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
@@ -215,8 +215,9 @@ mf.exxdiv = 'ewald'
 
 # Read dm and mo_coeff from pkl file   
 import pickle
-with open('phosphorous-compute_dm_mo-nk444.pkl', 'rb') as f:
+# with open('Si_444_right_no-molopt.pkl', 'rb') as f:
 # with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
+with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f:
     ss_input = pickle.load(f)
 
 dm = np.array(ss_input['dm_kpts'])
@@ -243,19 +244,20 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1,2,2]
+div_vector = [1,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 def localizer(q,r1,M=np.array([1,1,1])):
-    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    # return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    return ss_localizers.localizer_unity(q,r1)
 
 # localizer = lambda q,r1,M: ss_localizers.localizer_gauss(q,r1)
 # Setup ss_params dict
 ss_params = {
     'debug': False,
-    'r1_prefactor': "precompute",
-    'nlocal': 3,
+    'r1_prefactor':1.0,
+    'nlocal': 5,
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': False,
@@ -263,12 +265,12 @@ ss_params = {
     'n_fft': 350,
     'M':ss_input['M'],
     'vhR_symm': False,
-    'SqG_filenames':['phosphorous_SqG_nk444.pkl',None, None],
+    'SqG_filenames':['phosphorous_SqG_full_nk222.mat',None],
     'H_use_unscaled': True,
-    'delta':0.75,
+    'delta':0.2,
     'gamma':1e-8,
-    'r1_power_law_exponent':-2,
-    'r1_power_law_start':1
+    'r1_power_law_exponent':-5,
+    'r1_power_law_start':1,
 }
 
 

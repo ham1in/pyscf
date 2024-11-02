@@ -161,12 +161,44 @@ Si  2.57177646209   2.57177646209   2.57177646209
     cell.build()
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
+def build_phosphorous_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+P   0.0000000   12.3073329  7.8236391
+P   3.1137830   18.6749386  0.7625871
+P   0.0000000   18.6749386  3.5305260
+P   3.1137830   12.3073329  5.0557003
+P   3.1137830   1.9799090   7.8236391
+P   0.0000000   8.3475148   0.7625871
+P   3.1137830   8.3475148   3.5305260
+P   0.0000000   1.9799090   5.0557003
+        '''
 
+              
+    cell.a = '''
+6.227566008270  0.000000000000  0.000000000000
+0.000000000000  20.654847635604 0.000000000000
+0.000000000000  0.000000000000  8.586226257151
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 120000
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
 
 wrap_around = True
-nkx = 4
+nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_Si_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
 
 cell.build()
@@ -185,7 +217,7 @@ mf.exxdiv = 'ewald'
 
 # Read dm and mo_coeff from pkl file   
 import pickle
-with open('Si_444_right_no-molopt.pkl', 'rb') as f: # change me
+with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f: # change me
     ss_input = pickle.load(f)
 
 dm = np.array(ss_input['dm_kpts'])
@@ -248,7 +280,7 @@ nG = np.prod(NsCell)
 E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mo_coeff)
 debug_options = {
     'filetype':['pkl','mat'],
-    'prefix':"Si_right_no-molopt_" # change me
+    'prefix':"phosphorous_" # change me
 }
 
 SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options=debug_options)

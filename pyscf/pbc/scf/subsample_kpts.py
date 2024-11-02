@@ -203,8 +203,11 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                     # now working in the basis of reciprocal lattice vectors. Override settings
                     normal_vector = np.array([1,0,0])
                     M = np.array([1,1,1])
-                    r1 = ss_nlocal/2.
-                ss_r1_prefactor = precompute_r1_prefactor(ss_r1_power_law_start,ss_r1_power_law_exponent,nk_1d,ss_delta,ss_gamma,M,r1,normal_vector)
+                    r1_unscaled = ss_nlocal/2.
+                if ss_H_use_unscaled:
+                    ss_r1_prefactor = precompute_r1_prefactor(ss_r1_power_law_start,ss_r1_power_law_exponent,nk_1d,ss_delta,ss_gamma,M,r1_unscaled,normal_vector)
+                else:
+                    ss_r1_prefactor = precompute_r1_prefactor(ss_r1_power_law_start,ss_r1_power_law_exponent,nk_1d,ss_delta,ss_gamma,M,r1,normal_vector)
                 print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
 
             if mf.cell.dimension ==3:
