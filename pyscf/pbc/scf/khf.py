@@ -861,7 +861,7 @@ class KRHF(KSCF, pbchf.RHF):
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
 def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, mo_coeff_kpts = None, 
-                kshift_rel = 0.5, fourinterp = False, N_local=7):
+                kshift_rel = 0.5,  fourinterp = False,ss_params = {}):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -1109,8 +1109,17 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
         mo_occ_shift = mf2.get_occ(mo_energy_kpts=mo_energy_shift, mo_coeff_kpts=mo_coeff_shift)
         dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff_shift,mo_occ_kpts = mo_occ_shift)
 
+        if fourinterp or ss_params:
+            # Load default params
+            N_local = ss_params.get('N_local', 3)
+            localizer = ss_params.get('localizer')
+            H_use_unscaled = ss_params.get('H_use_unscaled', False)
+            full_domain = ss_params.get('full_domain', True)
+            cart_sphr_split = ss_params.get('cart_sphr_split', True)
+            vhR_symm = ss_params.get('vhR_symm', False)
+            subtract_nocc = ss_params.get('subtract_nocc', True)
 
-        if fourinterp:
+
             # Extract uKpts from each set of kpts
             # Unshifted
             if mo_coeff_kpts is None:
@@ -1118,7 +1127,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             # _, E_madelung1, uKpts1, _, kGrid1 = make_ss_inputs(mf2,mf2.kpts,dm_un, mo_coeff_kpts)
             shiftFac = [0.5]*3
             # _, _, uKpts2, qGrid, kGrid2 = make_ss_inputs(mf2,kmesh_shifted,dm_shift, mo_coeff_shift,   shiftFac=shiftFac)
-            E_standard1, E_madelung1, uKpts1, uKpts2, kGrid1,kGrid2, qGrid = make_ss_inputs_stagger(
+            E_standard, E_madelung, uKpts1, uKpts2, kGrid1,kGrid2, qGrid = make_ss_inputs_stagger(
                 mf2,kpts_i=ikpts,kpts_j=kmesh_shifted,dm_i=dm_un,dm_j=dm_shift, mo_coeff_i=mo_coeff_kpts,
                 mo_coeff_j=mo_coeff_shift,shiftFac=shiftFac)
 
@@ -1147,37 +1156,17 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
 
             # aoval = kmf.cell.pbc_eval_gto("GTO
-            SqG = np.zeros((nkpts, nG), dtype=np.float64)
-            print("MEM USAGE IS:", SqG.nbytes)
-            for q in range(nkpts):
-                for k in range(nkpts):
-                    temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+            # SqG = np.zeros((nkpts, nG), dtype=np.float64)
+            kGrid1 = minimum_image(cell, mf2.kpts)
+            kGrid2 = kmesh_shifted
 
-                    kpt1 = kGrid1[k, :]
-                    qpt = qGrid[q, :]
-                    kpt2 = kpt1 + qpt
+            SqG = build_SqG_k1k2(nkpts, nG, nbands, kGrid1, kGrid2,qGrid, mf2, uKpts1, uKpts2,rptGrid3D, dvol, NsCell, GptGrid3D,nks, debug_options={})
 
-                    kpt2_BZ = minimum_image(mf2.cell, kpt2)
-                    idx_kpt2 = np.where(np.sum((kGrid2 - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
-                    if len(idx_kpt2) != 1:
-                        raise TypeError("Cannot locate (k+q) in the kmesh.")
-                    idx_kpt2 = idx_kpt2[0]
-                    kGdiff = kpt2 - kpt2_BZ
-
-
-                    for n in range(nbands):
-                        for m in range(nbands):
-                            u1 = uKpts1[k, n, :]
-                            u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts2[idx_kpt2, m, :]
-                            rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
-                            temp_fft = np.fft.fftn((rho12 * dvol))
-                            # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
-                            temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
-
-                    SqG[q, :] += temp_SqG_k / nkpts
-            #SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-            # SqG = SqG - nocc  # remove the zero order approximate nocc
-            assert (np.abs(SqG[0, 0])-nocc < 1e-4)
+            if subtract_nocc:
+                SqG = SqG - nocc  # remove the zero order approximate nocc
+                assert (np.abs(SqG[0, 0]) < 1e-4)
+            else:
+                assert (np.abs(SqG[0, 0]-nocc) < 1e-4)
 
             #   Exchange energy can be formulated as
             #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
@@ -1241,7 +1230,95 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
                 tmp = SqG_local[iq, :].T * H(qG) * tmp
                 Ex_stagger_fourier += np.real(np.sum(tmp)) * bz_dvol
             Ex_stagger_fourier *= 4*np.pi*prefactor_ex
-            return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
+
+            if H_use_unscaled:
+                r1_unscaled = N_local/2. # in the basis of reciprocal vectors now.
+                H = lambda q: localizer(q,r1_prefactor * r1_unscaled)
+            else:
+                H = lambda q: localizer(q,r1_prefactor * r1)
+                
+            if full_domain:
+                from scipy.optimize import root_scalar
+
+                # Define r1_h and bounds
+                r1_h = r1
+                # xbounds = LsCell_bzlocal[0] * np.array([-1/2, 1/2])
+                # ybounds = LsCell_bzlocal[1] * np.array([-1/2, 1/2])
+                # zbounds = LsCell_bzlocal[2] * np.array([-1/2, 1/2])
+
+                # Find the closest boundary
+                # min_dir = 0  # Python uses 0-based indexing
+
+                if cart_sphr_split:
+                    h_tol = 5e-7 # the Gaussian reaches this value at the closest boundary
+                    unit_vec = np.array([r1, 0, 0]) # arbitrary direction
+
+                    # Define the zetafunc
+                    # from ss_localizers import localizer_gauss
+                    # import pyscf.pbc.scf.ss_localizers as ss_localizers
+
+                    zetafunc = lambda zeta: ss_localizers.localizer_gauss(unit_vec, r1, zeta)- h_tol
+                    
+                    # Solve for zeta_tol using root finding (equivalent of fzero in MATLAB)
+                    result = root_scalar(zetafunc, bracket=[0.1, 10])  # Adjust bracket range if needed
+                    if result.converged:
+                        zeta_tol = result.root
+                        rmult = 1 / zeta_tol
+                    else:
+                        raise ValueError("Root finding for zetafunc did not converge")
+                    # rmult = 0.2
+                    # Call the Fourier integration function
+                    CoulR = fourier_integration_3d(Lvec_recip,Lvec_real,N_local, r1_h, vhR_symm, True, rmult, RptGrid3D_local,nufft_gl,n_fft)
+
+                else:
+                    raise NotImplementedError("Must use cart-sph split")
+                    CoulR = fourier_integration_3d(N, xbounds, ybounds, zbounds, r1_h, True, False, np.nan, RptGrid_Fourier)
+
+            else:   
+                CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
+                CoulR[normR < 1e-8] = 4 * np.pi * r1
+
+
+            #   Step 4: Compute the correction
+
+            ss_correction = 0
+            #   Integral with Fourier Approximation
+            for iq, qpt in enumerate(qGrid):
+                qG = qpt[None, :] + GptGrid3D_local
+                exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
+                tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
+                if H_use_unscaled:
+                    qG_unscaled = qG @ np.linalg.inv(Lvec_recip)
+                    tmp = SqG_local[iq, :].T * H(qG_unscaled) * tmp
+                else:
+                    tmp = SqG_local[iq, :].T * H(qG) * tmp
+
+                ss_correction += np.real(np.sum(tmp))
+
+            int_terms = bz_dvol * prefactor_ex*4*np.pi*ss_correction
+
+            #   Quadrature with Coulomb kernel
+            for iq, qpt in enumerate(qGrid):
+                qG = qpt[None, :] + GptGrid3D_local
+                if H_use_unscaled:
+                    qG_unscaled = qG @ np.linalg.inv(Lvec_recip)
+                    tmp = SqG_local[iq, :].T * H(qG_unscaled) / np.sum(qG ** 2, axis=1)
+                else:
+                    tmp = SqG_local[iq, :].T * H(qG) / np.sum(qG ** 2, axis=1)
+
+                tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
+                ss_correction -= np.sum(tmp)
+
+            quad_terms = bz_dvol*prefactor_ex*4*np.pi*(ss_correction) - int_terms
+            ss_correction = bz_dvol* 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
+
+            #   Step 5: apply the correction
+            if subtract_nocc:
+                e_ex_ss = np.real(E_madelung + prefactor_ex * ss_correction)
+            else:
+                e_ex_ss = np.real(E_standard+prefactor_ex * ss_correction)
+            E_stagger_M = e_ex_ss
+            # return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
 
         else: # regular stagger
 
@@ -1273,10 +1350,6 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             nocc = mf2.cell.tot_electrons()//2
             E_stagger_M = E_stagger + nocc*conv_Madelung
             print("Non SCF")
-        # Standard Exchange energy
-        Jo, Ko = mf2.get_jk(cell=mf2.cell, dm_kpts=dm_un, kpts=mf2.kpts, kpts_band=mf2.kpts,exxdiv='ewald')
-        E_madelung = -1. / Nk * np.einsum('kij,kji', dm_un, Ko) * 0.5
-        E_madelung /= 2
 
         return np.real(E_stagger_M), np.real(E_stagger), np.real(E_madelung)
 
@@ -1489,8 +1562,11 @@ def closest_fbz_distance(Lvec_recip,N_local):
     r1 = N_local*np.min(distances) #must be scaled by nlocal
     return r1, pairs[np.argmin(distances)]
 
-
 def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
+    return build_SqG_k1k2(nkpts, nG, nbands, kGrid,kGrid, qGrid, kmf, uKpts,uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={})
+
+
+def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
     import os
     import numpy as np
     import scipy.io
@@ -1515,12 +1591,12 @@ def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCe
         for k in range(nkpts):
             temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
 
-            kpt1 = kGrid[k, :]
+            kpt1 = kGrid1[k, :]
             qpt = qGrid[q, :]
             kpt2 = kpt1 + qpt
 
             kpt2_BZ = minimum_image(kmf.cell, kpt2)
-            idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
+            idx_kpt2 = np.where(np.sum((kGrid2 - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
             if len(idx_kpt2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
             idx_kpt2 = idx_kpt2[0]
@@ -1528,8 +1604,8 @@ def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCe
 
             for n in range(nbands):
                 for m in range(nbands):
-                    u1 = uKpts[k, n, :]
-                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
+                    u1 = uKpts1[k, n, :]
+                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts2[idx_kpt2, m, :]
                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
                     temp_fft = np.fft.fftn((rho12 * dvol))
                     temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
