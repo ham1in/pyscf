@@ -113,8 +113,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     if khf_routine in khf_routines_stagger:
         print('Warning, no J term computed', file=f)
 
-    if khf_routine in khf_routines_ss:
-        assert(ss_params)
+    if ss_params:
+        # assert(ss_params)
         # Unpack params
         ss_localizer = ss_params['localizer']
         ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
@@ -242,7 +242,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             fourinterp = (khf_routine == "stagger_nonscf_fourier")
             Ek_stagger_M, Ek_stagger, Ek_madelung = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
                                                                 df_type=df_type, dm_kpts=dm_kpts,
-                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp)
+                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp,ss_params=ss_params)
 
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_stagger_list"].append(Ek_stagger_M)
