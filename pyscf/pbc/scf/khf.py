@@ -860,8 +860,8 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
-def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None, mo_coeff_kpts = None, 
-                kshift_rel = 0.5,  fourinterp = False,ss_params = {}):
+def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_coeff_kpts=None, 
+                kshift_rel=0.5, fourinterp=False, ss_params={}):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
     #To Do: Additional control arguments such as custom shift, scf control (cycles ..etc), ...
@@ -878,9 +878,9 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
         ecell.mesh = np.asarray(mf.cell.mesh) * Nk
         return ecell
 
-    #Function for Madelung constant calculation following formula in Stephen's paper
+    # Function for Madelung constant calculation following formula in Stephen's paper
     def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None, dm_kpts = None):
-        #Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
+        # Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
         nk = get_monkhorst_pack_size(icell, ikpts)
         if ew_eta is None or ew_cut is None:
@@ -888,13 +888,13 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
         chargs = cell_input.atom_charges()
         log_precision = np.log(cell_input.precision / (chargs.sum() * 16 * np.pi ** 2))
         ke_cutoff = -2 * ew_eta ** 2 * log_precision
-        #Get FFT mesh from cutoff value
+        # Get FFT mesh from cutoff value
         mesh = cell_input.cutoff_to_mesh(ke_cutoff)
         # if cell_input.dimension <= 2:
         #     mesh[2] = 1
         # if cell_input.dimension == 1:
         #     mesh[1] = 1
-        #Get grid
+        # Get grid
         Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh = mesh)
         #Get q+G points
         G_combined = Gv + shifted
@@ -1110,8 +1110,10 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
         dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff_shift,mo_occ_kpts = mo_occ_shift)
 
         if ss_params:
+            import pyscf.pbc.scf.ss_localizers as ss_localizers
+
             # Load default params
-            N_local = ss_params.get('N_local', 3)
+            N_local = ss_params.get('nlocal', 3)
             localizer = ss_params.get('localizer')
             H_use_unscaled = ss_params.get('H_use_unscaled', False)
             full_domain = ss_params.get('full_domain', True)
@@ -1120,6 +1122,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             subtract_nocc = ss_params.get('subtract_nocc', True)
             nufft_gl = ss_params.get('nufft_gl', True)
             n_fft = ss_params.get('n_fft', 350)
+            r1_prefactor = ss_params.get('r1_prefactor', 1.0)
 
 
             # Extract uKpts from each set of kpts
@@ -1167,9 +1170,9 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
 
             if subtract_nocc:
                 SqG = SqG - nocc  # remove the zero order approximate nocc
-                # assert (np.abs(SqG[0, 0]) < 1e-4) # Assert doesnt work here
-            # else:
-            #     assert (np.abs(SqG[0, 0]-nocc) < 1e-4)
+                assert (np.abs(np.min(SqG)) -nocc< 1e-4)
+            else:
+                assert (np.abs(np.min(SqG)) < 1e-4)
 
             #   Exchange energy can be formulated as
             #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
@@ -1183,14 +1186,19 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
 
             #   localizer for the local domain
-            r1 = np.min(LsCell_bz_local_norms) / 2
-            r1_prefactor = 1.0
-            r1 = r1_prefactor * r1
-            from pyscf.pbc.scf import ss_localizers
-            H = lambda q: ss_localizers.localizer_step(q,r1)
+            # r1 = np.min(LsCell_bz_local_norms) / 2
+            # r1 = r1_prefactor * r1
+            r1, closest_plane_vectors = closest_fbz_distance(Lvec_recip,N_local)
 
+            
             #   reciprocal lattice within the local domain
-            Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
+            if N_local % 2 == 1:
+                Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
+            else:
+                # At low Nlocal/Nk, this matters, because we want the direction where G is incremented to be opposite of 
+                # the default direction of a boundary-value q.
+                Grid_1D = np.concatenate((np.arange(0, N_local // 2 + 1), np.arange(-N_local // 2 +1, 0)))
+
             Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
             GptGrid3D_local = np.hstack(
                 (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
@@ -1217,22 +1225,6 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             Rz = np.fft.fftfreq(nqG_local[2], d=1 / nqG_local[2])
             Rxx, Ryy, Rzz = np.meshgrid(Rx, Ry, Rz, indexing='ij')
             RptGrid3D_local = np.hstack((Rxx.reshape(-1, 1), Ryy.reshape(-1, 1), Rzz.reshape(-1, 1))) @ Lvec_real_local
-
-            # #   Kernel from Fourier Interpolation
-            # from scipy.special import sici
-            # normR = np.linalg.norm(RptGrid3D_local, axis=1)
-            # CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
-            # CoulR[normR < 1e-8] = 4 * np.pi * r1
-
-            # #   Integral with Fourier Approximation
-            # Ex_stagger_fourier = 0.0
-            # for iq, qpt in enumerate(qGrid):
-            #     qG = qpt[None, :] + GptGrid3D_local
-            #     exp_mat = np.exp(1j * (qG @ RptGrid3D_local.T))
-            #     tmp = (exp_mat @ CoulR) / np.abs(np.linalg.det(LsCell_bz_local))
-            #     tmp = SqG_local[iq, :].T * H(qG) * tmp
-            #     Ex_stagger_fourier += np.real(np.sum(tmp)) * bz_dvol
-            # Ex_stagger_fourier *= 4*np.pi*prefactor_ex
 
             if H_use_unscaled:
                 r1_unscaled = N_local/2. # in the basis of reciprocal vectors now.
@@ -1282,8 +1274,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
 
                 CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
                 CoulR[normR < 1e-8] = 4 * np.pi * r1
-
-
+                
             #   Step 4: Compute the correction
 
             ss_correction = 0
@@ -1321,7 +1312,7 @@ def khf_stagger(icell,ikpts, version = "Non-SCF", df_type = None, dm_kpts = None
             if subtract_nocc:
                 e_ex_ss = np.real(E_madelung + prefactor_ex * ss_correction)
             else:
-                e_ex_ss = np.real(E_standard+prefactor_ex * ss_correction)
+                e_ex_ss = np.real(E_standard + prefactor_ex * ss_correction)
             E_stagger_M = e_ex_ss
             # return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
             return np.real(E_stagger_M), 0.0, np.real(E_madelung)

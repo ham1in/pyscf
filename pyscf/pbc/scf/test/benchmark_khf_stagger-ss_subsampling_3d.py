@@ -99,9 +99,79 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
-nkx = 2
+def build_phosphorous_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+P   0.0000000   12.3073329  7.8236391
+P   3.1137830   18.6749386  0.7625871
+P   0.0000000   18.6749386  3.5305260
+P   3.1137830   12.3073329  5.0557003
+P   3.1137830   1.9799090   7.8236391
+P   0.0000000   8.3475148   0.7625871
+P   3.1137830   8.3475148   3.5305260
+P   0.0000000   1.9799090   5.0557003
+        '''
+
+              
+    cell.a = '''
+6.227566008270  0.000000000000  0.000000000000
+0.000000000000  20.654847635604 0.000000000000
+0.000000000000  0.000000000000  8.586226257151
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 100
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
+
+
+def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
+    cell = pbcgto.Cell()
+    cell.atom='''
+        H 3.00   3.00   2.10
+        H 3.00   3.00   3.90
+        '''
+    cell.a = '''
+        6.0   0.0   0.0
+        0.0   6.0   0.0
+        0.0   0.0   6.0
+        '''
+    # cell.atom='''
+    #     H 1.50   1.50   2.10
+    #     H 1.50   1.50   3.90
+    #     '''
+    # cell.a = '''
+    #     3.0   0.0   0.0
+    #     0.0   3.0   0.0
+    #     0.0   0.0   24.0
+    #     '''
+    cell.unit = 'B'
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = {'H':'gth-szv'}
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    cell.dimension = 3
+    cell.ke_cutoff = kecut
+    cell.max_memory = 5000
+    cell.build()
+    cell.omega = 0
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
+    return cell, kpts
+nkx = 1
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=56)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56)
 
 cell.dimension = 3
 
@@ -142,16 +212,16 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 # Subsample 8 kpts
 
 
-div_vector = [1,2]
+div_vector = [1]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 def localizer(q,r1,M=np.array([1,1,1])):
-    # return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
-    return ss_localizers.localizer_unity(q,r1)
+    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    # return ss_localizers.localizer_unity(q,r1)
 
 ss_params = {
     'debug': False,
-    'r1_prefactor':1,
-    'nlocal': 17,
+    'r1_prefactor':100,
+    'nlocal': 4,
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': False,
@@ -159,7 +229,7 @@ ss_params = {
     'n_fft': 350,
     # 'M':ss_input['M'],
     'vhR_symm': False,
-    'SqG_filenames':[None,None],
+    'SqG_filenames':[None,None,None,None],
     # 'SqG_filenames':[None,None],
     'H_use_unscaled': True,
     'delta':0.2,
