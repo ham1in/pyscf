@@ -2647,7 +2647,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
             # VR = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d.shape[0]))
             for k in range(Ggrid_3d.shape[0]):
                 Rvec = Ggrid_3d[k, :]
-                print('Computing VR at element', k, 'Rvec:', Rvec)
+                print('Computing VR at element', k, ' of ', Ggrid_3d.shape[0], ' Rvec:', Rvec, end='\r')
                 VR[k] = compute_integrals_h(k,Rvec,False)
         else:
             raise NotImplementedError("Using h(q) must be used for for non-symmetry case")
