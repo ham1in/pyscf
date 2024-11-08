@@ -1109,6 +1109,37 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
         mo_occ_shift = mf2.get_occ(mo_energy_kpts=mo_energy_shift, mo_coeff_kpts=mo_coeff_shift)
         dm_shift = mf2.make_rdm1(mo_coeff_kpts=mo_coeff_shift,mo_occ_kpts = mo_occ_shift)
 
+
+        
+        #Computing the Staggered mesh energy
+        Nk = np.prod(nks)
+        E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
+        E_stagger/=2
+
+        count_iter = 1
+        ecell = set_cell(mf2)
+        ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
+        prev = 0
+        conv_Madelung = 0
+        while True and icell.dimension !=1:
+            Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
+            print("Iteration number " + str(count_iter))
+            print("Madelung:" + str(Madelung))
+            print("Eta:" + str(ew_eta))
+            if count_iter>1 and abs(Madelung-prev)<1e-8:
+                conv_Madelung = Madelung
+                break
+            if count_iter>30:
+                print("Error. Madelung constant not converged")
+                break
+            ew_eta*=2
+            count_iter+=1
+            prev = Madelung
+
+        nocc = mf2.cell.tot_electrons()//2
+        E_stagger_M = E_stagger + nocc*conv_Madelung
+        print("Non SCF")
+
         if ss_params:
             import pyscf.pbc.scf.ss_localizers as ss_localizers
 
@@ -1123,7 +1154,7 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
             nufft_gl = ss_params.get('nufft_gl', True)
             n_fft = ss_params.get('n_fft', 350)
             r1_prefactor = ss_params.get('r1_prefactor', 1.0)
-
+            SqG_filenames = ss_params.get('SqG_filenames', None)
 
             # Extract uKpts from each set of kpts
             # Unshifted
@@ -1163,8 +1194,7 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
             # aoval = kmf.cell.pbc_eval_gto("GTO
             # SqG = np.zeros((nkpts, nG), dtype=np.float64)
             cell = mf2.cell
-            # kGrid1 = minimum_image(cell, mf2.kpts)
-            # kGrid2 = kmesh_shifted
+
 
             SqG = build_SqG_k1k2(nkpts, nG, nbands, kGrid1, kGrid2,qGrid, mf2, uKpts1, uKpts2,rptGrid3D, dvol, NsCell, GptGrid3D,nks, debug_options={})
 
@@ -1310,43 +1340,46 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
 
             #   Step 5: apply the correction
             if subtract_nocc:
-                e_ex_ss = np.real(E_madelung + prefactor_ex * ss_correction)
+                # e_ex_ss = np.real(E_madelung + prefactor_ex * ss_correction)
+                E_stagger_M = np.real(E_stagger_M + prefactor_ex * ss_correction)
+
             else:
-                e_ex_ss = np.real(E_standard + prefactor_ex * ss_correction)
-            E_stagger_M = e_ex_ss
-            # return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
-            return np.real(E_stagger_M), 0.0, np.real(E_madelung)
+                # e_ex_ss = np.real(E_standard + prefactor_ex * ss_correction)
+                E_stagger_M = np.real(E_stagger + prefactor_ex * ss_correction)
+            # E_stagger_M = e_ex_ss
+            # # return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
+            # return np.real(E_stagger_M), 0.0, np.real(E_madelung)
 
-        else: # regular stagger
+        # else: # regular stagger
 
-            #Computing the Staggered mesh energy
-            Nk = np.prod(nks)
-            E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
-            E_stagger/=2
+            # #Computing the Staggered mesh energy
+            # Nk = np.prod(nks)
+            # E_stagger = -1./Nk * np.einsum('kij,kji', dm_shift,Kmat ) * 0.5
+            # E_stagger/=2
 
-            count_iter = 1
-            ecell = set_cell(mf2)
-            ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
-            prev = 0
-            conv_Madelung = 0
-            while True and icell.dimension !=1:
-                Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
-                print("Iteration number " + str(count_iter))
-                print("Madelung:" + str(Madelung))
-                print("Eta:" + str(ew_eta))
-                if count_iter>1 and abs(Madelung-prev)<1e-8:
-                    conv_Madelung = Madelung
-                    break
-                if count_iter>30:
-                    print("Error. Madelung constant not converged")
-                    break
-                ew_eta*=2
-                count_iter+=1
-                prev = Madelung
+            # count_iter = 1
+            # ecell = set_cell(mf2)
+            # ew_eta, ew_cut = ecell.get_ewald_params(mf2.cell.precision, mf2.cell.mesh)
+            # prev = 0
+            # conv_Madelung = 0
+            # while True and icell.dimension !=1:
+            #     Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
+            #     print("Iteration number " + str(count_iter))
+            #     print("Madelung:" + str(Madelung))
+            #     print("Eta:" + str(ew_eta))
+            #     if count_iter>1 and abs(Madelung-prev)<1e-8:
+            #         conv_Madelung = Madelung
+            #         break
+            #     if count_iter>30:
+            #         print("Error. Madelung constant not converged")
+            #         break
+            #     ew_eta*=2
+            #     count_iter+=1
+            #     prev = Madelung
 
-            nocc = mf2.cell.tot_electrons()//2
-            E_stagger_M = E_stagger + nocc*conv_Madelung
-            print("Non SCF")
+            # nocc = mf2.cell.tot_electrons()//2
+            # E_stagger_M = E_stagger + nocc*conv_Madelung
+            # print("Non SCF")
 
         return np.real(E_stagger_M), np.real(E_stagger), np.real(E_madelung)
 
