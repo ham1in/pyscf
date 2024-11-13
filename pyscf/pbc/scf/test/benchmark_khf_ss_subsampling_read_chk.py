@@ -177,7 +177,7 @@ print('Kmesh:', kmesh)
 
 # mf = khf.KRHF(cell, exxdiv='ewald')
 
-
+# Read scf Result
 from pyscf.lib import chkfile
 chkfile_result =chkfile.load('phosphorous-kmf-nk222.chk','scf')
 mf = khf.KRHF(cell, exxdiv='ewald')

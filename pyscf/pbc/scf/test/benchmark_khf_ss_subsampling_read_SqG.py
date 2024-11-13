@@ -198,20 +198,15 @@ P   0.0000000   1.9799090   5.0557003
     return cell, kpts
 
 wrap_around = True
-nkx = 1
+nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
 cell.build()
 
 print('Kmesh:', kmesh)
 
-mf = khf.KRHF(cell, exxdiv='ewald')
-df_type = df.GDF
-mf.with_df = df_type(cell, kpts).build()
 
-Nk = np.prod(kmesh)
-mf.exxdiv = 'ewald'
 
 
 # e1 = mf.kernel()
@@ -219,25 +214,43 @@ mf.exxdiv = 'ewald'
 # mo_coeff = np.array(mf.mo_coeff_kpts)
 
 
-# Read dm and mo_coeff from pkl file   
-import pickle
-with open('Si_444_right_no-molopt.pkl', 'rb') as f:
-with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
-with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f:
-    ss_input = pickle.load(f)
+# # Read dm and mo_coeff from pkl files   
+# import pickle
+# # with open('Si_444_right_no-molopt.pkl', 'rb') as f:
+# # with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
+# with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f:
+#     ss_input = pickle.load(f)
 
-dm = np.array(ss_input['dm_kpts'])
-mo_coeff = np.array(ss_input['mo_coeff_kpts'])
+# dm = np.array(ss_input['dm_kpts'])
+# mo_coeff = np.array(ss_input['mo_coeff_kpts'])
+
+
+# Read scf Result
+from pyscf.lib import chkfile
+chkfile_result =chkfile.load('phosphorous-kmf-nk222.chk','scf')
+mf = khf.KRHF(cell, exxdiv='ewald')
+mf.__dict__.update(chkfile_result)
+Nk = np.prod(kmesh)
+
+# Load GDF's CDERIs
+df_type = df.GDF
+df = df_type(cell, kpts)
+df._cderi = 'phosphorous-df-nk222.h5'
+df._cderi_to_save = None
+mf.with_df = df.build()
+
+# mf.with_df = df_type(cell, kpts).build()
+dm_kpts = mf.make_rdm1()
 
 # Regular energy components
 
 h1e = mf.get_hcore()
-ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm).real
+ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm_kpts).real
 
-Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
+Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
 
-Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm) * 0.5
-Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm)
+Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm_kpts) * 0.5
+Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm_kpts)
 
 Ek /= 2.
 Ek = Ek.real
@@ -250,7 +263,7 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1]
+div_vector = [1,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
@@ -263,7 +276,7 @@ def localizer(q,r1,M=np.array([1,1,1])):
 ss_params = {
     'debug': False,
     'r1_prefactor':1,
-    'nlocal': 17,
+    'nlocal': 3,
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': False,
@@ -271,9 +284,9 @@ ss_params = {
     'n_fft': 350,
     # 'M':ss_input['M'],
     'vhR_symm': False,
-    'SqG_filenames':[None,None],
+    'SqG_filenames':['phosphorous_SqG_nk222.npy',None],
     # 'SqG_filenames':[None,None],
-    'H_use_unscaled': True,
+    # 'H_use_unscaled': True,
     'delta':0.2,
     'gamma':1e-8,
     'r1_power_law_exponent':-5,
@@ -282,4 +295,4 @@ ss_params = {
 
 
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mo_coeff, dm_kpts=dm)
+                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mf.mo_coeff_kpts, dm_kpts=dm_kpts)

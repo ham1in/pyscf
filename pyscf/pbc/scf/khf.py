@@ -1595,7 +1595,7 @@ def closest_fbz_distance(Lvec_recip,N_local):
     return r1, pairs[np.argmin(distances)]
 
 def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
-    return build_SqG_k1k2(nkpts, nG, nbands, kGrid,kGrid, qGrid, kmf, uKpts,uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={})
+    return build_SqG_k1k2(nkpts, nG, nbands, kGrid,kGrid, qGrid, kmf, uKpts,uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options=debug_options)
 
 
 def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
@@ -1653,7 +1653,7 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
     print(f"Time to build SqG: {build_SqG_end_time - build_SqG_start_time} s")
 
     if debug_options:
-        debug_options['filetype'] = debug_options.get('filetype', 'mat')
+        debug_options['filetype'] = debug_options.get('filetype', 'npy')
         debug_options['prefix'] = debug_options.get('prefix', '')
 
         if 'mat' in debug_options['filetype']:
@@ -1667,6 +1667,10 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
                 pickle.dump(qGrid, f)
             with open(debug_options['prefix']+'SqG_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.pkl', 'wb') as f:
                 pickle.dump(SqG, f)
+        if 'npy' in debug_options['filetype']:
+            print('Saving qG npy files requested')
+            np.save(debug_options['prefix']+'qGrid_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.npy', qGrid)
+            np.save(debug_options['prefix']+'SqG_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.npy', SqG)
         # raise ValueError('Debugging requested, halting calculation')
 
     return SqG
@@ -1823,6 +1827,8 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
             SqG_full = scipy.io.loadmat(SqG_filename)['SqG_full'][0]
             SqG = np.zeros((nkpts, nG))
             SqG = SqG_full.reshape(nkpts, nG, order='C')
+        elif SqG_filename.split('.')[-1] == 'npy':
+            SqG = np.load(SqG_filename)
     else:
         SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options={})
 

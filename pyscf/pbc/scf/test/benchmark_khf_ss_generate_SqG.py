@@ -211,17 +211,18 @@ mf.with_df = df_type(cell, kpts).build()
 
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
-# e1 = mf.kernel()
-# dm = mf.make_rdm1()
-
+e1 = mf.kernel()
+dm = mf.make_rdm1()
+mo_coeff = mf.mo_coeff_kpts
 
 # Read dm and mo_coeff from pkl file   
-import pickle
-with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f: # change me
-    ss_input = pickle.load(f)
+# import pickle
+# with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f: # change me
+#     ss_input = pickle.load(f)
 
-dm = np.array(ss_input['dm_kpts'])
-mo_coeff = np.array(ss_input['mo_coeff_kpts'])
+# dm = np.array(ss_input['dm_kpts'])
+# mo_coeff = np.array(ss_input['mo_coeff_kpts'])
+
 
 # Regular energy components
 
@@ -279,7 +280,7 @@ nG = np.prod(NsCell)
 
 E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mo_coeff)
 debug_options = {
-    'filetype':['pkl','mat'],
+    'filetype':['npy'],
     'prefix':"phosphorous_" # change me
 }
 
