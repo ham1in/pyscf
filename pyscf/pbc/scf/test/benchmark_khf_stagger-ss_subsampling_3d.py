@@ -128,7 +128,7 @@ P   0.0000000   1.9799090   5.0557003
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
     cell.ke_cutoff = kecut
-    cell.max_memory = 100
+    cell.max_memory = 120000
     cell.build()
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
@@ -171,7 +171,7 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     return cell, kpts
 nkx = 1
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56)
+cell, kpts= build_H2_cell(nk=kmesh,kecut=56)
 
 cell.dimension = 3
 
@@ -187,6 +187,13 @@ Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
 e1 = mf.kernel()
 dm = mf.make_rdm1()
+# import pickle
+# with open('phosphorous_dm-mo_nk444.pkl', 'rb') as f:
+#     ss_input = pickle.load(f)
+
+# dm = np.array(ss_input['dm_kpts'])
+# mo_coeff = np.array(ss_input['mo_coeff_kpts'])
+
 
 # Regular energy components
 
@@ -220,8 +227,8 @@ def localizer(q,r1,M=np.array([1,1,1])):
 
 ss_params = {
     'debug': False,
-    'r1_prefactor':100,
-    'nlocal': 4,
+    'r1_prefactor':0.14,
+    'nlocal': 9,
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': False,
@@ -229,7 +236,8 @@ ss_params = {
     'n_fft': 350,
     # 'M':ss_input['M'],
     'vhR_symm': False,
-    'SqG_filenames':[None,None,None,None],
+    # 'SqG_filenames':['phosphorous_SqG_nk444.pkl',None,None,None],
+
     # 'SqG_filenames':[None,None],
     'H_use_unscaled': True,
     'delta':0.2,
@@ -239,7 +247,7 @@ ss_params = {
 }
 
 
-results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf",df_type=df_type,ss_params=ss_params)
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf",df_type=df_type,ss_params=ss_params,wrap_around=True)
 
 
 # print('=== Kpoint Subsampling Results (with Stagger) === ')

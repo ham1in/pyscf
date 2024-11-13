@@ -47,6 +47,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     print('Sampling ', nk, 'k-points', file=f)
     if mo_coeff_kpts is None:
         mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+    else:
+        mo_coeff_kpts = np.array(mo_coeff_kpts)
 
     if dm_kpts is None:
         dm_kpts = mf.make_rdm1()

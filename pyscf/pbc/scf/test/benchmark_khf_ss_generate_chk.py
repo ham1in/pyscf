@@ -68,6 +68,7 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
+
 def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -96,6 +97,34 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
+def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+Si  0.00000000000   0.00000000000   0.00000000000
+Si  2.57177646209   2.57177646209   2.57177646209
+        '''
+
+              
+    cell.a = '''
+0.00000000000   5.14355292417   5.14355292417
+5.14355292417   0.00000000000   5.14355292417
+5.14355292417   5.14355292417   0.00000000000
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 240000
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
+
 
 def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell = pbcgto.Cell()
@@ -133,36 +162,6 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
 
-
-
-def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom='''
-Si  0.00000000000   0.00000000000   0.00000000000
-Si  2.57177646209   2.57177646209   2.57177646209
-        '''
-
-              
-    cell.a = '''
-0.00000000000   5.14355292417   5.14355292417
-5.14355292417   0.00000000000   5.14355292417
-5.14355292417   5.14355292417   0.00000000000
-        '''
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = 'gth-szv'
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    #cell.ke_cutoff = 55.13
-    cell.ke_cutoff = kecut
-    cell.max_memory = 240000
-    cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
-    return cell, kpts
-
 def build_phosphorous_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
@@ -192,42 +191,40 @@ P   0.0000000   1.9799090   5.0557003
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
     cell.ke_cutoff = kecut
-    cell.max_memory = 100
+    cell.max_memory = 120000
     cell.build()
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
 
 wrap_around = True
-nkx = 1
+nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
+
 cell.build()
 
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
+mf.chkfile = 'phosphorous-kmf-nk222.chk'
 df_type = df.GDF
-mf.with_df = df_type(cell, kpts).build()
+
+df = df_type(cell, kpts)
+df._cderi_to_save = 'phosphorous-df-nk222.h5'
+import time
+df_build_time = time.time()
+mf.with_df = df.build()
+df_build_time = time.time() - df_build_time
+print('Time to build df:', df_build_time)
+
+# mf.with_df = df_type(cell, kpts).build()
+# mf.with_df._cderi_to_save = 'H2-kmf-nk222.h5'
 
 Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
-
-
-# e1 = mf.kernel()
-# dm = mf.make_rdm1()
-# mo_coeff = np.array(mf.mo_coeff_kpts)
-
-
-# Read dm and mo_coeff from pkl file   
-import pickle
-with open('Si_444_right_no-molopt.pkl', 'rb') as f:
-with open('H2-compute_dm_mo-nk888.pkl', 'rb') as f:
-with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f:
-    ss_input = pickle.load(f)
-
-dm = np.array(ss_input['dm_kpts'])
-mo_coeff = np.array(ss_input['mo_coeff_kpts'])
+e1 = mf.kernel()
+dm = mf.make_rdm1()
 
 # Regular energy components
 
@@ -250,36 +247,18 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1]
-
-import pyscf.pbc.scf.ss_localizers as ss_localizers
-# localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
-def localizer(q,r1,M=np.array([1,1,1])):
-    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
-    # return ss_localizers.localizer(q,r1)
-
-# localizer = lambda q,r1,M: ss_localizers.localizer_gauss(q,r1)
-# Setup ss_params dict
-ss_params = {
-    'debug': False,
-    'r1_prefactor':1,
-    'nlocal': 17,
-    'localizer': localizer,
-    'subtract_nocc': True,
-    'use_sqG_anisotropy': False,
-    'nufft_gl': True,
-    'n_fft': 350,
-    # 'M':ss_input['M'],
-    'vhR_symm': False,
-    'SqG_filenames':[None,None],
-    # 'SqG_filenames':[None,None],
-    'H_use_unscaled': True,
-    'delta':0.2,
-    'gamma':1e-8,
-    'r1_power_law_exponent':-5,
-    'r1_power_law_start':1,
-}
+# div_vector = [2,2]
+from pyscf.pbc.scf.khf import compute_SqG_anisotropy
 
 
-results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mo_coeff, dm_kpts=dm)
+# # Store output from make_ss_inputs in a numpy file
+# results = {
+#     'kmf': mf
+# }
+
+# M = compute_SqG_anisotropy(cell=mf.cell, nk=kmesh, N_local=7,dm_kpts=dm,mo_coeff_kpts=mf.mo_coeff_kpts)
+
+# results["M"] = M
+# import pickle
+# with open('H2-kmf-nk222.pkl', 'wb') as f:
+#     pickle.dump(results, f)

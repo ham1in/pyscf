@@ -1401,27 +1401,29 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=None,mo_coeff_kpts=None):
+def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=None,mo_coeff_kpts=None, mf=None):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
     kpts = cell.make_kpts(nk, wrap_around=True)
-    mf = KRHF(cell, exxdiv='ewald')
-    df_type = df.GDF
-    mf.with_df = df_type(cell, kpts).build()
+    if mf is None:
+        mf = KRHF(cell, exxdiv='ewald')
     nkpts = np.prod(nk)
 
     # Nk = np.prod(kmesh)
-    mf.exxdiv = 'ewald'
-    e1 = mf.kernel()
     if dm_kpts is None:
+        df_type = df.GDF
+        mf.with_df = df_type(cell, kpts).build()
+        e1 = mf.kernel()
         dm_kpts = mf.make_rdm1()
-    if mo_coeff_kpts is None:
-        mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+        if mo_coeff_kpts is None:
+            mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
+    elif mo_coeff_kpts is None:
+        raise ValueError("mo_coeff_kpts must be provided if dm_kpts is provided")
     
+    # E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm_kpts,
+    #                                                              mo_coeff_kpts=mo_coeff_kpts)
 
-    E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm_kpts,
-                                                                    mo_coeff_kpts=mo_coeff_kpts)
-
+    uKpts = build_uKpts(mf, kpts, dm_kpts, mo_coeff_kpts)
     nocc = cell.tot_electrons() // 2
 
 
@@ -2271,6 +2273,38 @@ def khf_ss_2d(kmf, nks, uKpts, ex, N_local=7, debug=False, localizer=None, r1_pr
     return e_ex_ss, int_term, quad_term
 
 
+def build_uKpts(kmf, kpts, dm_kpts, mo_coeff_kpts):
+    from pyscf.pbc.tools import get_monkhorst_pack_size
+
+    # Setup constants
+    NsCell = np.array(kmf.cell.mesh)
+    nG = np.prod(NsCell)
+    nocc = kmf.cell.tot_electrons() // 2
+    nbands = nocc
+    nk = get_monkhorst_pack_size(kmf.cell, kpts)
+    Nk = np.prod(nk)
+
+    # Setup real space grid points
+    Lvec_real = kmf.cell.lattice_vectors()
+    NsCell = np.array(kmf.cell.mesh)
+    L_delta = Lvec_real / NsCell[:, None]
+    dvol = np.abs(np.linalg.det(L_delta))
+    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+    rptGrid3D = mesh_idx @ L_delta
+
+    # Evaluate the atomic orbitals at the real space grid points
+    kGrid = minimum_image(kmf.cell, kpts)
+    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
+
+    # Compute uKpts
+    uKpts = np.zeros((Nk, nbands, nG), dtype=complex)
+    for k in range(Nk):
+        for n in range(nbands):
+            utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
+            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
+            uKpts[k, n, :] = np.squeeze(exp_part * utmp)
+    return uKpts
 
 def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     from pyscf.pbc.tools import madelung,get_monkhorst_pack_size
@@ -2290,28 +2324,29 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
 
     # Saving the wavefunction data (Strange MKL error just feeding mo_coeff...)
     # mo_coeff_kpts = kmf.mo_coeff_kpts # make input as well
-    Lvec_real = kmf.cell.lattice_vectors()
-    NsCell = np.array(kmf.cell.mesh)
-    L_delta = Lvec_real / NsCell[:, None]
-    dvol = np.abs(np.linalg.det(L_delta))
-    xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
-    mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
-    rptGrid3D = mesh_idx @ L_delta
-    aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
+    # Lvec_real = kmf.cell.lattice_vectors()
+    # NsCell = np.array(kmf.cell.mesh)
+    # L_delta = Lvec_real / NsCell[:, None]
+    # dvol = np.abs(np.linalg.det(L_delta))
+    # xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
+    # mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
+    # rptGrid3D = mesh_idx @ L_delta
+    # aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
     shiftFac=np.zeros(3)
     kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
-
     qGrid = minimum_image(kmf.cell, kshift_abs - kpts)
     kGrid = minimum_image(kmf.cell, kpts)
 
-    nbands = nocc
-    nG = np.prod(NsCell)
-    uKpts = np.zeros((Nk, nbands, nG), dtype=complex)
-    for k in range(Nk):
-        for n in range(nbands):
-            utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
-            exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
-            uKpts[k, n, :] = np.squeeze(exp_part * utmp)
+    # nbands = nocc
+    # nG = np.prod(NsCell)
+    # uKpts = np.zeros((Nk, nbands, nG), dtype=complex)
+    # for k in range(Nk):
+    #     for n in range(nbands):
+    #         utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
+    #         exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
+    #         uKpts[k, n, :] = np.squeeze(exp_part * utmp)
+
+    uKpts = build_uKpts(kmf, kpts, dm_kpts, mo_coeff_kpts)
     ss_inputs_end = time.time()
     print(f"Time taken for building uKpts: {ss_inputs_end - ss_inputs_start:.2f} s")
     return np.real(E_standard), np.real(E_madelung), uKpts, qGrid, kGrid
@@ -2620,6 +2655,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # Keep values of VhR_cart at the found indices
         VhR_cart = VhR_cart[indices]
         assert (VhR_cart.shape[0] == Ggrid_3d.shape[0])
+        print('NUFFT with', n_fft, 'points completed. Time elapsed (s):', np.round(time.time() - coulR_start_time,2))
     if use_symm:
         # Find only positive octant of Ggrid_3d
         Ggrid_3d_unique = Ggrid_3d[(Ggrid_3d[:, 0] >= 0) & (Ggrid_3d[:, 1] >= 0) & (Ggrid_3d[:, 2] >= 0)]
@@ -2653,7 +2689,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
             # with pymp.Parallel(os.cpu_count()) as p:
             for p0 in range(Ggrid_3d_unique.shape[0]):
                 Rvec = Ggrid_3d_unique[p0,:]
-                print('Computing VR_unique at element', p0, 'Rvec:', Rvec)
+                print('Computing VR at element', k, ' of ', Ggrid_3d.shape[0], ' Rvec:', Rvec, end='\r')
                 VR_unique[p0] = compute_integrals_h(p0,Rvec)
         else:
             raise NotImplementedError("Symmetry not yet implemented for non-h case")
@@ -2678,10 +2714,16 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
     else:
         if use_h:
             # VR = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d.shape[0]))
+            print('Computing VR, no. of elements: ', Ggrid_3d.shape[0])
+            tenth_marker = Ggrid_3d.shape[0] // 10
+            progress = 0
             for k in range(Ggrid_3d.shape[0]):
                 Rvec = Ggrid_3d[k, :]
-                print('Computing VR at element', k, ' of ', Ggrid_3d.shape[0], ' Rvec:', Rvec, end='\r')
                 VR[k] = compute_integrals_h(k,Rvec,False)
+
+                if k % tenth_marker < progress:
+                    print('Completed', k, 'of', Ggrid_3d.shape[0], 'elements. Time elapsed (s):', np.round(time.time() - coulR_start_time,2))
+                progress = k % tenth_marker
         else:
             raise NotImplementedError("Using h(q) must be used for for non-symmetry case")
 

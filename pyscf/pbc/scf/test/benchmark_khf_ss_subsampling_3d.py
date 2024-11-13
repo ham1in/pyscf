@@ -109,11 +109,44 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
 
+def build_phosphorous_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+P   0.0000000   12.3073329  7.8236391
+P   3.1137830   18.6749386  0.7625871
+P   0.0000000   18.6749386  3.5305260
+P   3.1137830   12.3073329  5.0557003
+P   3.1137830   1.9799090   7.8236391
+P   0.0000000   8.3475148   0.7625871
+P   3.1137830   8.3475148   3.5305260
+P   0.0000000   1.9799090   5.0557003
+        '''
 
+              
+    cell.a = '''
+6.227566008270  0.000000000000  0.000000000000
+0.000000000000  20.654847635604 0.000000000000
+0.000000000000  0.000000000000  8.586226257151
+        '''
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 120000
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
+    return cell, kpts
+    
 wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_H2_cell(nk=kmesh,kecut=100,wrap_around=wrap_around)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
 
 cell.build()
@@ -150,12 +183,28 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [2]
+div_vector = [1,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 def localizer(q,r1,M=np.array([1,1,1])):
     return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+
+ss_params = {
+    'debug': False,
+    'r1_prefactor': 1.0,
+    'nlocal': 3,
+    'localizer': localizer,
+    'subtract_nocc': True,
+    'use_sqG_anisotropy': False,
+    'nufft_gl': True,
+    'n_fft': 350,
+    # 'M':M,
+    'vhR_symm': False,
+}
+
+# results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
+#                          wrap_around=wrap_around,ss_debug=False,ss_localizer=localizer,ss_r1_prefactor=1.0,ss_nlocal=3,
+#                          ss_subtract_nocc=True)
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_debug=False,ss_localizer=localizer,ss_r1_prefactor=1.0,ss_nlocal=3,
-                         ss_subtract_nocc=True)
+                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False)
