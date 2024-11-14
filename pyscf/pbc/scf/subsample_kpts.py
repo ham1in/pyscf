@@ -8,7 +8,7 @@ import copy
 #                    wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
 #                    ss_subtract_nocc=False,ss_use_sqG_anisotropy=False,ss_nufft_gl=False,ss_n_fft=400):
 def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-                   wrap_around=False, sanity_run=False, ss_params=None):
+                   wrap_around=False, sanity_run=False, with_gamma_point=True, ss_params=None):
     """
 
     Args:
@@ -61,7 +61,6 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     Ej = 1. / nk * np.einsum('kij,kji', dm_kpts, J)
     Ej /= 2.
 
-    kpts_div_old = mf.cell.make_kpts(nks, wrap_around=wrap_around)
 
 
 
@@ -145,6 +144,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     if sanity_run:
         start_ind = -1
     k=0
+    kpts_div_old = mf.cell.make_kpts(nks, wrap_around=wrap_around,with_gamma_point=with_gamma_point)
+
     for j in range(start_ind, len(div_vector)):
         if j == -1:
             div = 1
@@ -159,7 +160,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             nk_div = np.prod(nks)
             print('Dividing by ', div ** dim, ', subsampling ', nk_div, 'k-points', file=f)
 
-        kpts_div = mf.cell.make_kpts(nks, wrap_around=wrap_around)
+        kpts_div = mf.cell.make_kpts(nks, wrap_around=wrap_around, with_gamma_point=with_gamma_point)
 
         subsample_indices = []
         for ik in range(nk_div):
@@ -242,15 +243,24 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             from pyscf.pbc.scf.khf import khf_stagger
             stagger_type = stagger_routine_to_type[khf_routine]
             fourinterp = (khf_routine == "stagger_nonscf_fourier")
-            Ek_stagger_M, Ek_stagger, Ek_madelung = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
+            khf_stagger_results = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
                                                                 df_type=df_type, dm_kpts=dm_kpts,
                                                                 mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp,ss_params=ss_params)
 
+            Ek_stagger_M = khf_stagger_results['E_stagger_M']
+            Ek_madelung = khf_stagger_results['E_madelung']
+            int_term = khf_stagger_results['int_term']
+            quad_term = khf_stagger_results['quad_term']
+            Ek_stagger_ss = khf_stagger_results['E_stagger_ss']
+
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
+            results["Ek_ss_list"].append(Ek_stagger_ss)
             results["Ek_stagger_list"].append(Ek_stagger_M)
             results["Ek_list"].append(Ek_madelung)
             results["nk_list"].append(nk_div)
             results["nks_list"].append(copy.copy(nks))
+            results["int_terms"].append(int_term)
+            results["quad_terms"].append(quad_term)
 
         else: # standard exchange
 

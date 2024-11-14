@@ -268,15 +268,16 @@ div_vector = [1,2]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 def localizer(q,r1,M=np.array([1,1,1])):
-    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    # return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    return ss_localizers.localizer_unity(q,r1)
     # return ss_localizers.localizer(q,r1)
 
 # localizer = lambda q,r1,M: ss_localizers.localizer_gauss(q,r1)
 # Setup ss_params dict
 ss_params = {
     'debug': False,
-    'r1_prefactor':1,
-    'nlocal': 3,
+    'r1_prefactor':100,
+    'nlocal': np.array([5,17,8]),
     'localizer': localizer,
     'subtract_nocc': True,
     'use_sqG_anisotropy': False,

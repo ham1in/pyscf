@@ -1122,7 +1122,7 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
         prev = 0
         conv_Madelung = 0
         while True and icell.dimension !=1:
-            Madelung = staggered_Madelung( cell_input = ecell,  shifted = shift ,  ew_eta = ew_eta, ew_cut = ew_cut)
+            Madelung = staggered_Madelung(cell_input=ecell, shifted=shift, ew_eta=ew_eta, ew_cut=ew_cut)
             print("Iteration number " + str(count_iter))
             print("Madelung:" + str(Madelung))
             print("Eta:" + str(ew_eta))
@@ -1194,8 +1194,6 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
             # aoval = kmf.cell.pbc_eval_gto("GTO
             # SqG = np.zeros((nkpts, nG), dtype=np.float64)
             cell = mf2.cell
-
-
             SqG = build_SqG_k1k2(nkpts, nG, nbands, kGrid1, kGrid2,qGrid, mf2, uKpts1, uKpts2,rptGrid3D, dvol, NsCell, GptGrid3D,nks, debug_options={})
 
             if subtract_nocc:
@@ -1293,11 +1291,11 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
                         raise ValueError("Root finding for zetafunc did not converge")
                     # rmult = 0.2
                     # Call the Fourier integration function
-                    CoulR = fourier_integration_3d(Lvec_recip,Lvec_real,N_local, r1_h, vhR_symm, True, rmult, RptGrid3D_local,nufft_gl,n_fft)
+                    CoulR = fourier_integration_3d(Lvec_recip, Lvec_real, nks, N_local, r1_h, vhR_symm, True, rmult, RptGrid3D_local, nufft_gl, n_fft)
 
                 else:
                     raise NotImplementedError("Must use cart-sph split")
-                    CoulR = fourier_integration_3d(N, xbounds, ybounds, zbounds, r1_h, True, False, np.nan, RptGrid_Fourier)
+                    # CoulR = fourier_integration_3d(N, xbounds, ybounds, zbounds, r1_h, True, False, np.nan, RptGrid_Fourier)
 
             else:   
                 raise NotImplementedError("Must use full domain")
@@ -1341,11 +1339,11 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
             #   Step 5: apply the correction
             if subtract_nocc:
                 # e_ex_ss = np.real(E_madelung + prefactor_ex * ss_correction)
-                E_stagger_M = np.real(E_stagger_M + prefactor_ex * ss_correction)
+                E_stagger_ss = np.real(E_stagger_M + prefactor_ex * ss_correction)
 
             else:
                 # e_ex_ss = np.real(E_standard + prefactor_ex * ss_correction)
-                E_stagger_M = np.real(E_stagger + prefactor_ex * ss_correction)
+                E_stagger_ss = np.real(E_stagger + prefactor_ex * ss_correction)
             # E_stagger_M = e_ex_ss
             # # return np.real(Ex_stagger_fourier), 0.0, np.real(E_madelung1)
             # return np.real(E_stagger_M), 0.0, np.real(E_madelung)
@@ -1381,7 +1379,21 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
             # E_stagger_M = E_stagger + nocc*conv_Madelung
             # print("Non SCF")
 
-        return np.real(E_stagger_M), np.real(E_stagger), np.real(E_madelung)
+        results_dict = {
+            "E_stagger_M":np.real(E_stagger_M),
+            "E_stagger":np.real(E_stagger),
+            "E_madelung":np.real(E_madelung),
+            "E_stagger_ss":0,
+            "int_term":0,
+            "quad_term":0,
+        }
+
+        if ss_params:
+            results_dict["E_stagger_ss"] = E_stagger_ss
+            results_dict["ss_correction"] = prefactor_ex*ss_correction
+            results_dict["int_term"] = int_terms
+            results_dict["quad_term"] = quad_terms
+        return results_dict
 
 
 def minimum_image(cell, kpts):
@@ -1591,7 +1603,7 @@ def closest_fbz_distance(Lvec_recip,N_local):
             pairs.append((i,j))
 
     # Find the minimum distance
-    r1 = N_local*np.min(distances) #must be scaled by nlocal
+    r1 = np.min(N_local*distances) #must be scaled by nlocal
     return r1, pairs[np.argmin(distances)]
 
 def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
@@ -1709,12 +1721,15 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     if localizer is None:
         localizer = lambda q, r1: ss_localizers.localizer_poly(q, r1, 4)
 
+    if np.isscalar(N_local):
+        N_local = np.array([N_local, N_local, N_local])
     #   basic info
     cell = kmf.cell
     kpts = kmf.kpts
     nks = np.array(nks)
     nocc = cell.tot_electrons() // 2
     nkpts = np.prod(nks)
+    dim = 3
     #   compute the singularity subtraction correction
 
     #   Step 1: compute the pair product in reciproal space
@@ -1860,10 +1875,43 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     
 
     #   reciprocal lattice within the local domain
-    Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
+
+    # Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
+    # Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
+
+
+
+    #   reciprocal lattice within the local domain
+    
+    N_local_x = N_local[0]
+    N_local_y = N_local[1]
+    N_local_z = N_local[2]
+
+    if N_local_x % 2 == 1:
+        Grid_1D_x = np.concatenate((np.arange(0, (N_local_x - 1) // 2 + 1), np.arange(-(N_local_x - 1) // 2, 0)))
+    else:
+        # At low Nlocal/Nk, this matters, because we want the direction where G is incremented to be opposite of 
+        # the default direction of a boundary-value q.
+        Grid_1D_x = np.concatenate((np.arange(0, N_local_x // 2 + 1), np.arange(-N_local_x // 2 +1, 0)))
+    
+    if N_local_y % 2 == 1:
+        Grid_1D_y = np.concatenate((np.arange(0, (N_local_y - 1) // 2 + 1), np.arange(-(N_local_y - 1) // 2, 0)))
+    else:
+        Grid_1D_y = np.concatenate((np.arange(0, N_local_y // 2 + 1), np.arange(-N_local_y // 2 +1, 0)))
+
+    if N_local_z % 2 == 1:
+        Grid_1D_z = np.concatenate((np.arange(0, (N_local_z - 1) // 2 + 1), np.arange(-(N_local_z - 1) // 2, 0)))
+    else:
+        Grid_1D_z = np.concatenate((np.arange(0, N_local_z // 2 + 1), np.arange(-N_local_z // 2 +1, 0)))
+
+    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D_x, Grid_1D_y, Grid_1D_z, indexing='ij')
     GptGrid3D_local = np.hstack(
         (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
+
+    # Grid_1D = np.concatenate((np.arange(0, (N_local[0] - 1) // 2 + 1), np.arange(-(N_local[0] - 1) // 2, 0)))
+    # Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
+    # GptGrid3D_local = np.hstack(
+    #     (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
 
     #   location/index of GptGrid3D_local within 'GptGrid3D'
     idx_GptGrid3D_local = []
@@ -1892,7 +1940,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     normR = np.linalg.norm(RptGrid3D_local, axis=1)
     cart_sphr_split = True
     if H_use_unscaled:
-        r1_unscaled = N_local/2. # in the basis of reciprocal vectors now.
+        r1_unscaled = np.min(N_local)/2. # in the basis of reciprocal vectors now.
         H = lambda q: localizer(q,r1_prefactor * r1_unscaled)
     else:
         H = lambda q: localizer(q,r1_prefactor * r1)
@@ -1928,11 +1976,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
                 raise ValueError("Root finding for zetafunc did not converge")
             # rmult = 0.2
             # Call the Fourier integration function
-            CoulR = fourier_integration_3d(Lvec_recip,Lvec_real,N_local, r1_h, vhR_symm, True, rmult, RptGrid3D_local,nufft_gl,n_fft)
+            CoulR = fourier_integration_3d(Lvec_recip, Lvec_real, nks, N_local, r1_h, vhR_symm, True, rmult, RptGrid3D_local, nufft_gl, n_fft)
 
         else:
             raise NotImplementedError("Must use cart-sph split")
-            CoulR = fourier_integration_3d(N, xbounds, ybounds, zbounds, r1_h, True, False, np.nan, RptGrid_Fourier)
+            # CoulR = fourier_integration_3d(N, xbounds, ybounds, zbounds, r1_h, True, False, np.nan, RptGrid_Fourier)
 
     else:   
         CoulR = 4 * np.pi / normR * sici(normR * r1)[0]
@@ -2411,7 +2459,7 @@ def make_ss_inputs_stagger(kmf,kpts_i,kpts_j,dm_i,dm_j, mo_coeff_i,mo_coeff_j,sh
 
     return np.real(E_standard), np.real(E_madelung), uKpts1, uKpts2, kGrid1,kGrid2, qGrid
 
-def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_symm,use_h,rmult,Ggrid_3d,nufft_gl=False,n_fft=300):
+def fourier_integration_3d(reciprocal_vectors,direct_vectors,nks,N_local,r1_h,use_symm,use_h,rmult,Ggrid_3d,nufft_gl=False,n_fft=300):
     # Create a coulomb kernel integrand that work well with cubature.
     # Essentially, the bounds for cubature should be [0,1]^3
  
@@ -2420,10 +2468,12 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
     import time
     coulR_start_time = time.time()
 
+    # nR_1d = (Ggrid_3d.shape[0])**(1/3)
+    # assert (np.abs(nR_1d-np.round(nR_1d))<1e-8) # Check if nR_1d is an integer
+    # nR_1d = np.round(nR_1d).astype(int)
 
-    nR_1d = (Ggrid_3d.shape[0])**(1/3)
-    assert (np.abs(nR_1d-np.round(nR_1d))<1e-8) # Check if nR_1d is an integer
-    nR_1d = np.round(nR_1d).astype(int)
+    nR = nks * N_local
+    nR_x, nR_y, nR_z = nR
 
     def localizer_gauss_sph_bounded(x, y, z, r1, rmax):
         r = np.sqrt(x**2 + y**2 + z**2)  # Compute the radius
@@ -2630,7 +2680,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # VhR_cart = nufft(VhR_cart, qy_fft, Ry / (2 * np.pi), 2)
         # VhR_cart = nufft(VhR_cart, qz_fft, Rz / (2 * np.pi), 3)
 
-        VhR_cart_3d = finufft.nufft3d1(QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp, target_fq, (nR_1d,nR_1d,nR_1d), eps=1e-10, isign=-1)
+        VhR_cart_3d = finufft.nufft3d1(QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp, target_fq, (nR_x,nR_y,nR_z), eps=1e-10, isign=-1)
         del target_fq, QX_nufft_inp, QY_nufft_inp, QZ_nufft_inp
         VhR_cart = VhR_cart_3d.ravel(order='C') # To get z as fastest changing index
 
@@ -2641,8 +2691,11 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
         # VhR_cart = VhR_cart / vol_direct_nlocal
 
         # Compute 1d frequencies from finufft
-        R_array = np.arange(-nR_1d/2, nR_1d/2,dtype=int)
-        RX, RY, RZ = np.meshgrid(R_array, R_array, R_array, indexing='ij')
+        rx = np.arange(-nR_x/2, nR_x/2,dtype=int)
+        ry = np.arange(-nR_y/2, nR_y/2,dtype=int)
+        rz = np.arange(-nR_z/2, nR_z/2,dtype=int)
+        
+        RX, RY, RZ = np.meshgrid(rx, ry, rz, indexing='ij')
         fft_grid_R = np.column_stack([RX.ravel(), RY.ravel(), RZ.ravel()])
         assert ((direct_vectors == direct_vectors.T).all())
         fft_grid_R = fft_grid_R @ (direct_vectors/N_local)
@@ -2684,8 +2737,6 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,N_local,r1_h,use_sy
 
         VR_unique = np.zeros(Ggrid_3d_unique.shape[0], dtype=complex)
         VhR_cart_ref_unique = np.zeros(Ggrid_3d_unique.shape[0], dtype=complex)
-        
-
         
         if use_h:
             # VR_unique = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d_unique.shape[0]))

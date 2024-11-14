@@ -146,7 +146,8 @@ P   0.0000000   1.9799090   5.0557003
 wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+with_gamma_point = False
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around,with_gamma_point=with_gamma_point)
 cell.dimension = 3
 
 cell.build()
@@ -183,7 +184,7 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1,2]
+div_vector = [1]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
@@ -207,4 +208,4 @@ ss_params = {
 #                          wrap_around=wrap_around,ss_debug=False,ss_localizer=localizer,ss_r1_prefactor=1.0,ss_nlocal=3,
 #                          ss_subtract_nocc=True)
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False)
+                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,with_gamma_point=with_gamma_point)

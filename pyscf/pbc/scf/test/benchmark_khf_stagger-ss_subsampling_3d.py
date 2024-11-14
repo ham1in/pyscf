@@ -169,7 +169,43 @@ def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)
     return cell, kpts
-nkx = 1
+
+def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
+    cell = pbcgto.Cell()
+    cell.atom='''
+        H 3.00   3.00   2.10
+        H 3.00   3.00   3.90
+        '''
+    cell.a = '''
+        6.0   0.0   0.0
+        0.0   6.0   0.0
+        0.0   0.0   6.0
+        '''
+    # cell.atom='''
+    #     H 1.50   1.50   2.10
+    #     H 1.50   1.50   3.90
+    #     '''
+    # cell.a = '''
+    #     3.0   0.0   0.0
+    #     0.0   3.0   0.0
+    #     0.0   0.0   24.0
+    #     '''
+    cell.unit = 'B'
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = {'H':'gth-szv'}
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    cell.dimension = 3
+    cell.ke_cutoff = kecut
+    cell.max_memory = 5000
+    cell.build()
+    cell.omega = 0
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
+    return cell, kpts
+nkx = 2
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_H2_cell(nk=kmesh,kecut=56)
 
