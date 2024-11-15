@@ -127,6 +127,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
         ss_delta = ss_params.get('delta', 0.5)
         ss_r1_power_law_exponent = ss_params.get('r1_power_law_exponent', -1)
         ss_r1_power_law_start = ss_params.get('r1_power_law_start', 1)
+        ss_subtract_nocc = ss_params.get('subtract_nocc', False)
+        ss_subtract_nocc_sigma = ss_params.get('subtract_nocc_sigma', np.zeros([0,0,0]))
         M = np.array([1,1,1])
 
         if ss_params['use_sqG_anisotropy']:
@@ -214,12 +216,16 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                 print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
 
             if mf.cell.dimension ==3:
-                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung, 
-                                                               N_local=ss_params['nlocal'], debug=ss_params['debug'],
-                                                               localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor, 
-                                                               fourier_only=fourier_only, subtract_nocc=ss_params['subtract_nocc'], 
+                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung,
+                                                               N_local=ss_params['nlocal'],
+                                                               debug=ss_params['debug'],
+                                                               localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,
+                                                               fourier_only=fourier_only,
+                                                               subtract_nocc=ss_params['subtract_nocc'],
+                                                               subtract_nocc_sigma=ss_params['subtract_nocc_sigma'],
                                                                nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'],
-                                                               vhR_symm=ss_params['vhR_symm'],H_use_unscaled=ss_H_use_unscaled,
+                                                               vhR_symm=ss_params['vhR_symm'],
+                                                               H_use_unscaled=ss_H_use_unscaled,
                                                                SqG_filename=ss_SqG_filenames[k])
 
                 results["Ek_ss_2_list"].append(ex_ss_2)

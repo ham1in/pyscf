@@ -268,18 +268,26 @@ div_vector = [1,2]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 def localizer(q,r1,M=np.array([1,1,1])):
-    # return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
-    return ss_localizers.localizer_unity(q,r1)
+    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    # return ss_localizers.localizer_unity(q,r1)
     # return ss_localizers.localizer(q,r1)
 
 # localizer = lambda q,r1,M: ss_localizers.localizer_gauss(q,r1)
 # Setup ss_params dict
+
+
+# Compute SqG anisotropy, use for subtract_nocc_sigma
+from pyscf.pbc.scf.khf import compute_SqG_anisotropy
+
+sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=7,dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts)
+
 ss_params = {
     'debug': False,
     'r1_prefactor':100,
-    'nlocal': np.array([5,17,8]),
+    'nlocal': 5,
     'localizer': localizer,
-    'subtract_nocc': True,
+    'subtract_nocc': 2,
+    'subtract_nocc_sigma': sigmas,
     'use_sqG_anisotropy': False,
     'nufft_gl': True,
     'n_fft': 350,
@@ -293,6 +301,8 @@ ss_params = {
     'r1_power_law_exponent':-5,
     'r1_power_law_start':1,
 }
+
+
 
 
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",

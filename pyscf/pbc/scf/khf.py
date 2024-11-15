@@ -860,6 +860,89 @@ class KRHF(KSCF, pbchf.RHF):
 
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
+
+def Madelung_modified(cell_input, kpts, shifted, ew_eta=None):
+    # Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
+    from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
+    from pyscf.pbc.gto.cell import get_Gv_weights
+
+    nk = get_monkhorst_pack_size(cell_input, kpts)
+    if ew_eta is None:
+        ew_eta, _ = cell_input.get_ewald_params(cell_input.precision, cell_input.mesh)
+    chargs = cell_input.atom_charges()
+    log_precision = np.log(cell_input.precision / (chargs.sum() * 16 * np.pi ** 2))
+    ke_cutoff = -2 * ew_eta ** 2 * log_precision
+    # Get FFT mesh from cutoff value
+    mesh = cell_input.cutoff_to_mesh(ke_cutoff)
+    # if cell_input.dimension <= 2:
+    #     mesh[2] = 1
+    # if cell_input.dimension == 1:
+    #     mesh[1] = 1
+    # Get grid
+    Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh = mesh)
+    #Get q+G points
+    G_combined = Gv + shifted
+    absG2 = np.einsum('gi,gi->g', G_combined, G_combined)
+
+
+    if cell_input.dimension ==3:
+        # Calculate |q+G|^2 values of the shifted points
+        qG2 = np.einsum('gi,gi->g', G_combined, G_combined)
+        # Note: Stephen - remove those points where q+G = 0
+        qG2[qG2 == 0] = 1e200
+        # Now putting the ingredients together
+        component = 4 * np.pi / qG2 * np.exp(-qG2 / (4 * ew_eta ** 2))
+        #First term
+        sum_term = weights*np.einsum('i->',component).real
+        #Second Term
+        sub_term = 2*ew_eta/np.sqrt(np.pi)
+        return sum_term - sub_term
+
+    elif cell_input.dimension == 2:  # Truncated Coulomb
+        from scipy.special import erfc, erf
+        # The following 2D ewald summation is taken from:
+        # R. Sundararaman and T. Arias PRB 87, 2013
+        def fn(eta, Gnorm, z):
+            Gnorm_z = Gnorm * z
+            large_idx = Gnorm_z > 20.0
+            ret = np.zeros_like(Gnorm_z)
+            x = Gnorm / 2. / eta + eta * z
+            with np.errstate(over='ignore'):
+                erfcx = erfc(x)
+                ret[~large_idx] = np.exp(Gnorm_z[~large_idx]) * erfcx[~large_idx]
+                ret[large_idx] = np.exp((Gnorm * z - x ** 2)[large_idx]) * erfcx[large_idx]
+            return ret
+
+        def gn(eta, Gnorm, z):
+            return np.pi / Gnorm * (fn(eta, Gnorm, z) + fn(eta, Gnorm, -z))
+
+        def gn0(eta, z):
+            return -2 * np.pi * (z * erf(eta * z) + np.exp(-(eta * z) ** 2) / eta / np.sqrt(np.pi))
+
+        b = cell_input.reciprocal_vectors()
+        inv_area = np.linalg.norm(np.cross(b[0], b[1])) / (2 * np.pi) ** 2
+        # Perform the reciprocal space summation over  all reciprocal vectors
+        # within the x,y plane.
+        planarG2_idx = np.logical_and(Gv[:, 2] == 0, absG2 > 0.0)
+
+        G_combined = G_combined[planarG2_idx]
+        absG2 = absG2[planarG2_idx]
+        absG = absG2 ** (0.5)
+        # Performing the G != 0 summation.
+        coords = np.array([[0,0,0]])
+        rij = coords[:, None, :] - coords[None, :, :] # should be just the zero vector for correction.
+        Gdotr = np.einsum('ijx,gx->ijg', rij, G_combined)
+        ewg = np.einsum('i,j,ijg,ijg->', chargs, chargs, np.cos(Gdotr),
+                        gn(ew_eta, absG, rij[:, :, 2:3]))
+        # Performing the G == 0 summation.
+        # ewg += np.einsum('i,j,ij->', chargs, chargs, gn0(ew_eta, rij[:, :, 2]))
+
+        ewg *= inv_area # * 0.5
+
+        ewg_analytical = 2 * ew_eta / np.sqrt(np.pi)
+        return ewg - ewg_analytical
+
+
 def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_coeff_kpts=None, 
                 kshift_rel=0.5, fourinterp=False, ss_params={}):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
@@ -879,7 +962,7 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
         return ecell
 
     # Function for Madelung constant calculation following formula in Stephen's paper
-    def staggered_Madelung(cell_input, shifted, ew_eta = None, ew_cut = None, dm_kpts = None):
+    def staggered_Madelung(cell_input, shifted, ew_eta=None, ew_cut=None, dm_kpts=None):
         # Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
         from pyscf.pbc.gto.cell import get_Gv_weights
         nk = get_monkhorst_pack_size(icell, ikpts)
@@ -1807,15 +1890,21 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
             # remove the zero order approximate nocc
             SqG = SqG - nocc
             assert np.abs(SqG[0, 0]) < 1e-4
-            
+
         if subtract_nocc == 2:
             # Remove nocc*exp(-vareps*|q|^2)
             subtract_nocc_sigma = np.array(subtract_nocc_sigma)
+            subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-1/2))
+            vareps_x, vareps_y, vareps_z = subtract_nocc_vareps
+            ew_eta = 1./2. * np.mean(subtract_nocc_vareps**(-1/2)) # assume isotropic
+            vareps_mean = 1./4. * ew_eta ** (-2)
+            print('Subtracting nocc*exp(-vareps*|q|^2) with vareps = ', subtract_nocc_vareps)
+            print('Assuming isotropic. varepes_mean = ', vareps_mean)
+
             for iq, qpt in enumerate(qGrid):
                 qG = qpt[None, :] + GptGrid3D
-                subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-1/2))
-                vareps_x, vareps_y, vareps_z = subtract_nocc_vareps
-                exp_term = np.exp(vareps_x * qG[:, 0]**2 + vareps_y * qG[:, 1]**2 + vareps_z * qG[:, 2]**2)
+                # exp_term = np.exp(vareps_x * qG[:, 0]**2 + vareps_y * qG[:, 1]**2 + vareps_z * qG[:, 2]**2)
+                exp_term = np.exp(vareps_mean * qG[:, 0]**2 + vareps_mean * qG[:, 1]**2 + vareps_mean * qG[:, 2]**2)
                 SqG[iq, :] = SqG[iq, :] - nocc * exp_term
             assert np.abs(SqG[0, 0]) < 1e-4
     else:
@@ -1895,8 +1984,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
         CoulR[normR < 1e-8] = 4 * np.pi * r1
 
 
-    #   Step 4: Compute the correction
-
+    #   Step 4: Compute the corrections
     ss_correction = 0
     #   Integral with Fourier Approximation
     for iq, qpt in enumerate(qGrid):
@@ -1935,6 +2023,14 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     #   Step 5: apply the correction
     if subtract_nocc == 1:
         e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
+    elif subtract_nocc == 2:
+        shifted = np.array([0,0,0])
+        chi = Madelung_modified(cell, kpts, shifted, ew_eta=ew_eta)
+        ex_madelung_modified = ex_standard - nocc * chi
+        print(f"Input ew_eta: {ew_eta:.6f}")
+        print(f"Modified Madelung correction: ", chi)
+        print(f"Ex Madelung: {ex_madelung:.6f}, Ex Madelung Modified: {ex_madelung_modified:.6f}")
+        e_ex_ss = np.real(ex_madelung_modified + prefactor_ex * ss_correction)
     else:
         e_ex_ss = np.real(ex_standard+prefactor_ex * ss_correction)
 
