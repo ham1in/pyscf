@@ -1910,7 +1910,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
             for iq, qpt in enumerate(qGrid):
                 qG = qpt[None, :] + GptGrid3D
                 # exp_term = np.exp(vareps_x * qG[:, 0]**2 + vareps_y * qG[:, 1]**2 + vareps_z * qG[:, 2]**2)
-                exp_term = np.exp(vareps_mean * qG[:, 0]**2 + vareps_mean * qG[:, 1]**2 + vareps_mean * qG[:, 2]**2)
+                exp_term = np.exp(-(vareps_mean * qG[:, 0]**2 + vareps_mean * qG[:, 1]**2 + vareps_mean * qG[:, 2]**2))
                 SqG[iq, :] = SqG[iq, :] - nocc * exp_term
             assert np.abs(SqG[0, 0]) < 1e-4
     else:

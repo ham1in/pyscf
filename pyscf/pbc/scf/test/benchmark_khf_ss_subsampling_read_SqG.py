@@ -285,7 +285,7 @@ sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=7,dm_kpts=dm_kpt
 ss_params = {
     'debug': False,
     'r1_prefactor':100,
-    'nlocal': 5,
+    'nlocal': 11,
     'localizer': localizer,
     'subtract_nocc': 2,
     'subtract_nocc_sigma': sigmas,
