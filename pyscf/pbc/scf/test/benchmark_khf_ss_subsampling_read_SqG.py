@@ -279,7 +279,8 @@ def localizer(q,r1,M=np.array([1,1,1])):
 # Compute SqG anisotropy, use for subtract_nocc_sigma
 from pyscf.pbc.scf.khf import compute_SqG_anisotropy
 
-sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=7,dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts)
+sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=7,dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts,
+                                SqG_filename='phosphorous_SqG_nk222.npy')
 
 ss_params = {
     'debug': False,

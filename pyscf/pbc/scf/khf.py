@@ -1519,7 +1519,7 @@ def build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip):
     return GptGrid3D_local
 
 
-def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None):
+def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None, SqG_filename=None):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1533,7 +1533,7 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
     nkpts = np.prod(nks)
 
     # Nk = np.prod(kmesh)
-    if dm_kpts is None:
+    if dm_kpts is None and SqG_filename is None:
         df_type = df.GDF
         mf.with_df = df_type(cell, kpts).build()
         e1 = mf.kernel()
@@ -1542,17 +1542,16 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
             mo_coeff_kpts = np.array(mf.mo_coeff_kpts)
     elif mo_coeff_kpts is None:
         raise ValueError("mo_coeff_kpts must be provided if dm_kpts is provided")
-    
+
     # E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm_kpts,
     #                                                              mo_coeff_kpts=mo_coeff_kpts)
 
     uKpts = build_uKpts(mf, kpts, dm_kpts, mo_coeff_kpts)
     nocc = cell.tot_electrons() // 2
 
-
-    # Compute SqG
-
+  
     #   Step 1.1: evaluate AO on a real fine mesh in unit cell
+    Lvec_recip = cell.reciprocal_vectors()
     Lvec_real = mf.cell.lattice_vectors()
     NsCell = mf.cell.mesh
     L_delta = Lvec_real / NsCell[:, None]
@@ -1572,24 +1571,31 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
     # assert that qGrid has origin
     if np.linalg.norm(qGrid[0]) > 1e-8:
         raise ValueError("Anisotropy calculation has support for qGrid with origin only")
-    
+
     #   Step 1.3: evaluate MO periodic component on a real fine mesh in unit cell
     nbands = nocc
     nG = np.prod(NsCell)
 
     #   Step 1.4: compute the pair product
-    Lvec_recip = cell.reciprocal_vectors()
     Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
     Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
     Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
     Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
     GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
 
-    # Build SqG
-    SqG = build_SqG(nkpts, nG, nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D)
+    if SqG_filename is not None:
+        if SqG_filename.endswith('.npy'):
+            SqG = np.load(SqG_filename)
+        elif SqG_filename.endswith('.pkl'):
+            import pickle
+            with open(SqG_filename, 'rb') as f:
+                SqG = pickle.load(f)
+        else:
+            raise ValueError("SqG filename must end with .npy or pkl")
+    else:
+        SqG = build_SqG(nkpts, nG, nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D)
 
     #   Reciprocal lattice within the local domain
-
     GptGrid3D_local = build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip)
 
     #   location/index of GptGrid3D_local within 'GptGrid3D'
@@ -1689,14 +1695,14 @@ def closest_fbz_distance(Lvec_recip,N_local):
     r1 = np.min(N_local*distances) #must be scaled by nlocal
     return r1, pairs[np.argmin(distances)]
 
-def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], 
+def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1],
               subtract_nocc=0, debug_options={}):
 
-    return build_SqG_k1k2(nkpts, nG, nbands, kGrid, kGrid, qGrid, kmf, uKpts, uKpts, rptGrid3D, dvol, NsCell, 
+    return build_SqG_k1k2(nkpts, nG, nbands, kGrid, kGrid, qGrid, kmf, uKpts, uKpts, rptGrid3D, dvol, NsCell,
                           GptGrid3D, nks=nks, subtract_nocc=subtract_nocc, debug_options=debug_options)
 
 
-def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell, 
+def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell,
                    GptGrid3D, nks=[1,1,1], subtract_nocc=0, debug_options={}):
 
     import os
