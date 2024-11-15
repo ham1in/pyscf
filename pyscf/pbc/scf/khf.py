@@ -1413,13 +1413,41 @@ def minimum_image(cell, kpts):
     kpts_bz = cell.get_abs_kpts(tmp_kpt)
     return kpts_bz
 
-def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=None,mo_coeff_kpts=None, mf=None):
+def build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip):
+    if N_local_x % 2 == 1:
+        Grid_1D_x = np.concatenate((np.arange(0, (N_local_x - 1) // 2 + 1), np.arange(-(N_local_x - 1) // 2, 0)))
+    else:
+        # At low Nlocal/Nk, this matters, because we want the direction where G is incremented to be opposite of 
+        # the default direction of a boundary-value q.
+        Grid_1D_x = np.concatenate((np.arange(0, N_local_x // 2 + 1), np.arange(-N_local_x // 2 +1, 0)))
+    if N_local_y % 2 == 1:
+        Grid_1D_y = np.concatenate((np.arange(0, (N_local_y - 1) // 2 + 1), np.arange(-(N_local_y - 1) // 2, 0)))
+    else:
+        Grid_1D_y = np.concatenate((np.arange(0, N_local_y // 2 + 1), np.arange(-N_local_y // 2 +1, 0)))
+
+    if N_local_z % 2 == 1:
+        Grid_1D_z = np.concatenate((np.arange(0, (N_local_z - 1) // 2 + 1), np.arange(-(N_local_z - 1) // 2, 0)))
+    else:
+        Grid_1D_z = np.concatenate((np.arange(0, N_local_z // 2 + 1), np.arange(-N_local_z // 2 +1, 0)))
+
+    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D_x, Grid_1D_y, Grid_1D_z, indexing='ij')
+    GptGrid3D_local = np.hstack(
+        (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
+    return GptGrid3D_local
+
+
+def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
-    kpts = cell.make_kpts(nk, wrap_around=True)
+
+    if np.isscalar(N_local):
+        N_local = np.array([N_local]*dim)
+    N_local_x, N_local_y, N_local_z = N_local
+
+    kpts = cell.make_kpts(nks, wrap_around=True)
     if mf is None:
         mf = KRHF(cell, exxdiv='ewald')
-    nkpts = np.prod(nk)
+    nkpts = np.prod(nks)
 
     # Nk = np.prod(kmesh)
     if dm_kpts is None:
@@ -1458,6 +1486,10 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=No
     qGrid = minimum_image(cell, kpts - kpts[0, :])
     kGrid = minimum_image(cell, kpts)
 
+    # assert that qGrid has origin
+    if np.linalg.norm(qGrid[0]) > 1e-8:
+        raise ValueError("Anisotropy calculation has support for qGrid with origin only")
+    
     #   Step 1.3: evaluate MO periodic component on a real fine mesh in unit cell
     nbands = nocc
     nG = np.prod(NsCell)
@@ -1470,41 +1502,12 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=No
     Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
     GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
 
-    # Compute S(q+G)
-    SqG = np.zeros((nkpts, nG), dtype=np.float64)
-    print("MEM USAGE IS:", SqG.nbytes)
-    for q in range(nkpts):
-        for k in range(nkpts):
-            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+    # Build SqG
+    SqG = build_SqG(nkpts, nG, nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D)
 
-            kpt1 = kGrid[k, :]
-            qpt = qGrid[q, :]
-            kpt2 = kpt1 + qpt
+    #   Reciprocal lattice within the local domain
 
-            kpt2_BZ = minimum_image(mf.cell, kpt2)
-            idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
-            if len(idx_kpt2) != 1:
-                raise TypeError("Cannot locate (k+q) in the kmesh.")
-            idx_kpt2 = idx_kpt2[0]
-            kGdiff = kpt2 - kpt2_BZ
-
-            for n in range(nbands):
-                for m in range(nbands):
-                    u1 = uKpts[k, n, :]
-                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
-                    rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
-                    temp_fft = np.fft.fftn((rho12 * dvol))
-                    # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
-                    temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
-
-            SqG[q, :] += temp_SqG_k / nkpts
-
-
-    #   reciprocal lattice within the local domain
-    Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
-    GptGrid3D_local = np.hstack(
-        (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
+    GptGrid3D_local = build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip)
 
     #   location/index of GptGrid3D_local within 'GptGrid3D'
     idx_GptGrid3D_local = []
@@ -1519,20 +1522,17 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=No
     #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
     SqG = SqG[:, idx_GptGrid3D_local]
 
-
-
-
     # Fit Gaussian to data
-    nqG_local = N_local**dim * nkpts  # lattice size along each dimension in the real-space (equal to q + G size)
-    N_local3D = N_local**dim
-    qG_full = np.zeros((nqG_local, 3))
-    SqG_local_full = np.zeros(nqG_local)
+    nqG_local_3D = np.prod(N_local * nks)  
+    N_local_3D = np.prod(N_local)
+    qG_full = np.zeros((nqG_local_3D, 3))
+    SqG_local_full = np.zeros(nqG_local_3D)
 
     # Fill arrays with data
     for iq in range(qGrid.shape[0]):
         qG = qGrid[iq, :] + GptGrid3D_local
-        start_idx = iq * N_local3D
-        end_idx = (iq + 1) * N_local3D
+        start_idx = iq * N_local_3D
+        end_idx = (iq + 1) * N_local_3D
         qG_full[start_idx:end_idx, :] = qG
         SqG_local_full[start_idx:end_idx] = SqG[iq, :]
 
@@ -1562,7 +1562,7 @@ def compute_SqG_anisotropy(cell, nk=np.array([3,3,3]),N_local=7,dim=3,dm_kpts=No
     # Print results
     print(f'params are {params[0]:.6f}, {params[1]:.6f}, {params[2]:.6f}, '
           f'{params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
-    print(f'Sx, Sy, Sz are {params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
+    print(f'Sx, Sy, Sz (1 sigma) are {params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
 
     return sigma
 
@@ -1606,11 +1606,16 @@ def closest_fbz_distance(Lvec_recip,N_local):
     r1 = np.min(N_local*distances) #must be scaled by nlocal
     return r1, pairs[np.argmin(distances)]
 
-def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
-    return build_SqG_k1k2(nkpts, nG, nbands, kGrid,kGrid, qGrid, kmf, uKpts,uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options=debug_options)
+def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], 
+              subtract_nocc=0, debug_options={}):
+
+    return build_SqG_k1k2(nkpts, nG, nbands, kGrid, kGrid, qGrid, kmf, uKpts, uKpts, rptGrid3D, dvol, NsCell, 
+                          GptGrid3D, nks=nks, subtract_nocc=subtract_nocc, debug_options=debug_options)
 
 
-def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1], debug_options={}):
+def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell, 
+                   GptGrid3D, nks=[1,1,1], subtract_nocc=0, debug_options={}):
+
     import os
     import numpy as np
     import scipy.io
@@ -1687,9 +1692,10 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
 
     return SqG
 
-def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False, 
-              localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=False, 
-              full_domain=True,nufft_gl=True,n_fft=400,vhR_symm=True, H_use_unscaled=False, SqG_filename=None):
+def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
+              localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=0,
+              subtract_nocc_sigma=np.array([0.0,0.0,0.0]), full_domain=True,nufft_gl=True,
+              n_fft=400,vhR_symm=True, H_use_unscaled=False, SqG_filename=None):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1707,22 +1713,22 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
         tuple: A tuple containing the exchange energy with singularity subtraction (e_ex_ss) and an alternative exchange energy calculation (e_ex_ss2).
     """
     # Function implementation goes here
-    #Xin's version - using for test/benchmarking
-    print("Singularity Subtraction for Fock Exchange (3D) requested")
+    # Xin's version - using for test/benchmarking
     # Start timer
     import time
-
-    ss_start_time = time.time()
-
-
     from scipy.special import sici
     import pyscf.pbc.scf.ss_localizers as ss_localizers
+    
+    print("Singularity Subtraction for Fock Exchange (3D) requested")
+    ss_start_time = time.time()
 
     if localizer is None:
         localizer = lambda q, r1: ss_localizers.localizer_poly(q, r1, 4)
 
     if np.isscalar(N_local):
         N_local = np.array([N_local, N_local, N_local])
+    N_local_x, N_local_y, N_local_z = N_local
+
     #   basic info
     cell = kmf.cell
     kpts = kmf.kpts
@@ -1730,108 +1736,36 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     nocc = cell.tot_electrons() // 2
     nkpts = np.prod(nks)
     dim = 3
-    #   compute the singularity subtraction correction
 
     #   Step 1: compute the pair product in reciproal space
 
     #   Step 1.1: evaluate AO on a real fine mesh in unit cell
     Lvec_real = kmf.cell.lattice_vectors()
     NsCell = kmf.cell.mesh
+    nbands = nocc
+    nG = np.prod(NsCell)
     L_delta = Lvec_real / NsCell[:, None]
     dvol = np.abs(np.linalg.det(L_delta))
-    #Evaluate wavefunction on all real space grid points
-    # # Establishing real space grid (Generalized for arbitary volume defined by 3 vectors)
+
+    # Compute real-space grid
     xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
     mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
     rptGrid3D = mesh_idx @ L_delta
-    # aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kmf.kpts)
 
     #   Step 1.2: map q-mesh and k-mesh to BZ
     qGrid = minimum_image(cell, kpts - kpts[0, :])
     kGrid = minimum_image(cell, kpts)
 
-    #   Step 1.3: evaluate MO periodic component on a real fine mesh in unit cell
-    nbands = nocc
-    nG = np.prod(NsCell)
-    # uKpts = np.zeros((nkpts, nbands, nG), dtype=complex)
-    # for k in range(nkpts):
-    #     for n in range(nbands):
-    #         #   mo_coeff_kpts is of dimension (nkpts, nbasis, nband)
-    #         utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
-    #         exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
-    #         uKpts[k, n, :] = np.squeeze(exp_part * utmp)
-
-    #   Step 1.4: compute the pair product
     Lvec_recip = cell.reciprocal_vectors()
     Gx = np.fft.fftfreq(NsCell[0], d=1 / NsCell[0])
     Gy = np.fft.fftfreq(NsCell[1], d=1 / NsCell[1])
     Gz = np.fft.fftfreq(NsCell[2], d=1 / NsCell[2])
     Gxx, Gyy, Gzz = np.meshgrid(Gx, Gy, Gz, indexing='ij')
     GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1))) @ Lvec_recip
-    # if debug:
-    #     nqG = np.prod(NsCell)*nkpts
-    #     qG_full = np.zeros([nqG,3])
-    #     # HqG_local_full = np.zeros([nqG_local])
-    #     SqG_full = np.zeros([nqG])
-    #     # VqG_local_full = np.zeros([nqG_local])
 
-    # build_SqG_start_time = time.time()
-
-    # import pymp
-    # import os
-    # # SqG = np.zeros((nkpts, nG), dtype=np.float64)
-    # SqG = pymp.shared.array((nkpts, nG), dtype=np.float64)
-    # print("MEM USAGE (MB) IS:", SqG.nbytes/(1024*1024))
-    # nthreads = int(os.environ['OMP_NUM_THREADS'])
-    # with pymp.Parallel(np.min([nthreads,4])) as p:
-    #     # for q in range(nkpts):
-    #     for q in p.xrange(nkpts):
-    #         for k in range(nkpts):
-    #             temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
-
-    #             kpt1 = kGrid[k, :]
-    #             qpt = qGrid[q, :]
-    #             kpt2 = kpt1 + qpt
-
-    #             kpt2_BZ = minimum_image(kmf.cell, kpt2)
-    #             idx_kpt2 = np.where(np.sum((kGrid - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
-    #             if len(idx_kpt2) != 1:
-    #                 raise TypeError("Cannot locate (k+q) in the kmesh.")
-    #             idx_kpt2 = idx_kpt2[0]
-    #             kGdiff = kpt2 - kpt2_BZ
-
-    #             for n in range(nbands):
-    #                 for m in range(nbands):
-    #                     u1 = uKpts[k, n, :]
-    #                     u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts[idx_kpt2, m, :]
-    #                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
-    #                     temp_fft = np.fft.fftn((rho12 * dvol))
-    #                     # Compute sums on the fly instead of storing in rho (For mem. reasons, rho doesn't too large for >5x5x5 in some systems)
-    #                     temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
-
-    #             SqG[q, :] += temp_SqG_k / nkpts
-    #         if debug:
-    #             # qGz0 =qG[qG[:,2]==0]
-    #             # SqGz0 = SqG_local[iq, :].T[qG[:, 2] == 0]
-    #             qG = qpt[None, :] + GptGrid3D
-    #             qG_full[q*nG:(q+1)*nG] = qG
-    #             SqG_full[q*nG:(q+1)*nG]=SqG[q, :]
-    #             # HqG_local_full[iq*N_local**3:(iq+1)*N_local**3]=H(qGz0)
-    #             # VqG_local_full[iq*N_local**3:(iq+1)*N_local**3]=(1 - coul[qG[:,2]==0])/ np.sum(qGz0 ** 2,axis=1)
-    # build_SqG_end_time = time.time()
-    # print(f"Time to build SqG: {build_SqG_end_time - build_SqG_start_time} s")
-
-    # if debug:
-    #     print('Saving qG mat files requested')
-    #     scipy.io.savemat('qG_full_nk'+str(nks[0])+str(nks[1])+str(nks[2])+'.mat', {"qG_full":qG_full})
-    #     # scipy.io.savemat('HqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"HqG_local_full":HqG_local_full})
-    #     # scipy.io.savemat('VqG_local_full_nk'+str(nks[0])+str(nks[1])+'1.mat', {"VqG_local_full":VqG_local_full})
-    #     scipy.io.savemat('SqG_full_nk'+str(nks[0])+str(nks[1])+str(nks[2])+'.mat', {"SqG_full":SqG_full})
-
-    #     raise ValueError('Debugging requested, halting calculation')
-
+    # Build SqG
     if SqG_filename is not None:
-        # Read SqG from pkl file
+        # Read From File if given
         import pickle
         print('Reading SqG from file: ', SqG_filename)
         if SqG_filename.split('.')[-1] == 'pkl':
@@ -1847,73 +1781,47 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     else:
         SqG = build_SqG(nkpts, nG,nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=nks, debug_options={})
 
-    # SqG = np.sum(np.abs(rhokqmnG) ** 2, axis=(0, 2, 3)) / nkpts
-    if subtract_nocc:
-        SqG = SqG - nocc  # remove the zero order approximate nocc
-        assert np.abs(SqG[0, 0]) < 1e-4
-    else:
-        assert np.abs(SqG[0, 0]) - nocc < 1e-4 
-
     #   Exchange energy can be formulated as
     #   Ex = prefactor_ex * bz_dvol * sum_{q} (\sum_G S(q+G) * 4*pi/|q+G|^2)
     prefactor_ex = -1 / (8 * np.pi ** 3)
     bz_dvol = np.abs(np.linalg.det(Lvec_recip)) / nkpts
 
-        #   Step 3: construct Fouier Approximation of S(q+G)h(q+G)
+    #   Step 3: construct Fouier Approximation of S(q+G)h(q+G)
 
     #   Step 3.1: define the local domain as multiple of BZ
     LsCell_bz_local = N_local * Lvec_recip
     LsCell_bz_local_norms = np.linalg.norm(LsCell_bz_local, axis=1)
 
     #   localizer for the local domain
-    #r1 = np.min(LsCell_bz_local_norms) / 2
+    # r1 = np.min(LsCell_bz_local_norms) / 2
 
     # Find the minimum distance
     r1, closest_plane_vectors = closest_fbz_distance(Lvec_recip,N_local)
-    
 
-    
+    # Reciprocal lattice within the local domain
+    GptGrid3D_local = build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip)
 
-    #   reciprocal lattice within the local domain
-
-    # Grid_1D = np.concatenate((np.arange(0, (N_local - 1) // 2 + 1), np.arange(-(N_local - 1) // 2, 0)))
-    # Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
-
-
-
-    #   reciprocal lattice within the local domain
-    
-    N_local_x = N_local[0]
-    N_local_y = N_local[1]
-    N_local_z = N_local[2]
-
-    if N_local_x % 2 == 1:
-        Grid_1D_x = np.concatenate((np.arange(0, (N_local_x - 1) // 2 + 1), np.arange(-(N_local_x - 1) // 2, 0)))
+    # Subtract nocc or related function from SqG
+    if subtract_nocc:
+        if subtract_nocc == 1:
+            # remove the zero order approximate nocc
+            SqG = SqG - nocc
+            assert np.abs(SqG[0, 0]) < 1e-4
+            
+        if subtract_nocc == 2:
+            # Remove nocc*exp(-vareps*|q|^2)
+            subtract_nocc_sigma = np.array(subtract_nocc_sigma)
+            for iq, qpt in enumerate(qGrid):
+                qG = qpt[None, :] + GptGrid3D
+                subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-1/2))
+                vareps_x, vareps_y, vareps_z = subtract_nocc_vareps
+                exp_term = np.exp(vareps_x * qG[:, 0]**2 + vareps_y * qG[:, 1]**2 + vareps_z * qG[:, 2]**2)
+                SqG[iq, :] = SqG[iq, :] - nocc * exp_term
+            assert np.abs(SqG[0, 0]) < 1e-4
     else:
-        # At low Nlocal/Nk, this matters, because we want the direction where G is incremented to be opposite of 
-        # the default direction of a boundary-value q.
-        Grid_1D_x = np.concatenate((np.arange(0, N_local_x // 2 + 1), np.arange(-N_local_x // 2 +1, 0)))
-    
-    if N_local_y % 2 == 1:
-        Grid_1D_y = np.concatenate((np.arange(0, (N_local_y - 1) // 2 + 1), np.arange(-(N_local_y - 1) // 2, 0)))
-    else:
-        Grid_1D_y = np.concatenate((np.arange(0, N_local_y // 2 + 1), np.arange(-N_local_y // 2 +1, 0)))
+        assert np.abs(SqG[0, 0]) - nocc < 1e-4
 
-    if N_local_z % 2 == 1:
-        Grid_1D_z = np.concatenate((np.arange(0, (N_local_z - 1) // 2 + 1), np.arange(-(N_local_z - 1) // 2, 0)))
-    else:
-        Grid_1D_z = np.concatenate((np.arange(0, N_local_z // 2 + 1), np.arange(-N_local_z // 2 +1, 0)))
-
-    Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D_x, Grid_1D_y, Grid_1D_z, indexing='ij')
-    GptGrid3D_local = np.hstack(
-        (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
-
-    # Grid_1D = np.concatenate((np.arange(0, (N_local[0] - 1) // 2 + 1), np.arange(-(N_local[0] - 1) // 2, 0)))
-    # Gxx_local, Gyy_local, Gzz_local = np.meshgrid(Grid_1D, Grid_1D, Grid_1D, indexing='ij')
-    # GptGrid3D_local = np.hstack(
-    #     (Gxx_local.reshape(-1, 1), Gyy_local.reshape(-1, 1), Gzz_local.reshape(-1, 1))) @ Lvec_recip
-
-    #   location/index of GptGrid3D_local within 'GptGrid3D'
+    # location/index of GptGrid3D_local within 'GptGrid3D'
     idx_GptGrid3D_local = []
     for Gl in GptGrid3D_local:
         idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
@@ -2021,19 +1929,18 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
         tmp[np.isinf(tmp) | np.isnan(tmp)] = 0
         ss_correction -= np.sum(tmp)
 
-
     quad_terms = bz_dvol*prefactor_ex*4*np.pi*(ss_correction) - int_terms
     ss_correction = bz_dvol* 4 * np.pi * ss_correction  # Coulomb kernel = 4 pi / |q|^2
 
     #   Step 5: apply the correction
-    if subtract_nocc:
-        e_ex_ss = np.real(ex_madelung+prefactor_ex * ss_correction)
+    if subtract_nocc == 1:
+        e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
     else:
         e_ex_ss = np.real(ex_standard+prefactor_ex * ss_correction)
 
-
     #   Step 6: Lin's new idea
     e_ex_ss2 = 0
+
     #   Integral with Fourier Approximation
     for iq, qpt in enumerate(qGrid):
         qG = qpt[None, :] + GptGrid3D_local

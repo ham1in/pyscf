@@ -200,39 +200,34 @@ nkx = 2
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
-
 cell.build()
 
 print('Kmesh:', kmesh)
 
-mf = khf.KRHF(cell, exxdiv='ewald')
-df_type = df.GDF
-mf.with_df = df_type(cell, kpts).build()
-
 Nk = np.prod(kmesh)
-mf.exxdiv = 'ewald'
-e1 = mf.kernel()
-dm = mf.make_rdm1()
-mo_coeff = mf.mo_coeff_kpts
 
-# Read dm and mo_coeff from pkl file   
-# import pickle
-# with open('phosphorous_dm-mo_nk222.pkl', 'rb') as f: # change me
-#     ss_input = pickle.load(f)
+# Read SCF Result and make KMF 
+from pyscf.lib import chkfile
+chkfile_result =chkfile.load('phosphorous-kmf-nk222.chk','scf')
+mf = khf.KRHF(cell, exxdiv='ewald')
+mf.__dict__.update(chkfile_result)
 
-# dm = np.array(ss_input['dm_kpts'])
-# mo_coeff = np.array(ss_input['mo_coeff_kpts'])
-
+# Load GDF's CDERIs
+df_type = df.GDF
+df = df_type(cell, kpts)
+df._cderi = 'phosphorous-df-nk222.h5'
+df._cderi_to_save = None
+mf.with_df = df.build()
+dm_kpts = mf.make_rdm1()
 
 # Regular energy components
-
 h1e = mf.get_hcore()
-ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm).real
+ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm_kpts).real
 
-Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
+Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
 
-Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm) * 0.5
-Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm)
+Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm_kpts) * 0.5
+Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm_kpts)
 
 Ek /= 2.
 Ek = Ek.real
@@ -278,7 +273,7 @@ GptGrid3D = np.hstack((Gxx.reshape(-1, 1), Gyy.reshape(-1, 1), Gzz.reshape(-1, 1
 nbands = nocc
 nG = np.prod(NsCell)
 
-E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm,mo_coeff_kpts=mo_coeff)
+E_standard, E_madelung, uKpts, qGrid, kGrid = make_ss_inputs(kmf=mf, kpts=kpts, dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts)
 debug_options = {
     'filetype':['npy'],
     'prefix':"phosphorous_" # change me

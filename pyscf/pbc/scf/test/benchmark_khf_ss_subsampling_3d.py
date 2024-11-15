@@ -149,22 +149,20 @@ kmesh = [nkx, nkx, nkx]
 with_gamma_point = False
 cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around,with_gamma_point=with_gamma_point)
 cell.dimension = 3
-
 cell.build()
+Nk = np.prod(kmesh)
 
 print('Kmesh:', kmesh)
 
+# Build KMF and run SCF
 mf = khf.KRHF(cell, exxdiv='ewald')
 df_type = df.GDF
 mf.with_df = df_type(cell, kpts).build()
-
-Nk = np.prod(kmesh)
 mf.exxdiv = 'ewald'
 e1 = mf.kernel()
 dm = mf.make_rdm1()
 
 # Regular energy components
-
 h1e = mf.get_hcore()
 ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm).real
 

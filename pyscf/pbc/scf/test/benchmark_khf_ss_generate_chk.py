@@ -126,40 +126,31 @@ Si  2.57177646209   2.57177646209   2.57177646209
     return cell, kpts
 
 
-def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
+def build_h2_cell(nk = (1,1,1),kecut=100,vac_dim=6.0,wrap_around=True):
     cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
     cell.atom='''
-        H 3.00   3.00   2.10
-        H 3.00   3.00   3.90
+        H 0.00 0.00 0.00
+        H 0.00 0.00 1.80
         '''
-    cell.a = '''
-        6.0   0.0   0.0
-        0.0   6.0   0.0
-        0.0   0.0   6.0
-        '''
-    # cell.atom='''
-    #     H 1.50   1.50   2.10
-    #     H 1.50   1.50   3.90
-    #     '''
-    # cell.a = '''
-    #     3.0   0.0   0.0
-    #     0.0   3.0   0.0
-    #     0.0   0.0   24.0
-    #     '''
-    cell.unit = 'B'
+    cell.a = np.eye(3)*vac_dim
 
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = {'H':'gth-szv'}
+
+    
+    
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    cell.dimension = 3
+    
     cell.ke_cutoff = kecut
-    cell.max_memory = 5000
+    cell.max_memory = 1000
+    cell.precision = 1e-8
+    #for i in range(len(cell.atom)):
+    #   cell.atom[i][1] = tuple(np.dot(np.array(cell.atom[i][1]),np.array(cell.a)))
     cell.build()
-    cell.omega = 0
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
 
 def build_phosphorous_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
@@ -199,19 +190,19 @@ P   0.0000000   1.9799090   5.0557003
 wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+vac_dim = 3.0 # bohr
+cell, kpts= build_h2_cell(nk=kmesh,kecut=56,wrap_around=wrap_around,vac_dim=vac_dim)
 cell.dimension = 3
-
 cell.build()
 
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
-mf.chkfile = 'phosphorous-kmf-nk222.chk'
+mf.chkfile = 'H2_small-kmf-nk444.chk'
 df_type = df.GDF
 
 df = df_type(cell, kpts)
-df._cderi_to_save = 'phosphorous-df-nk222.h5'
+df._cderi_to_save = 'H2_small-df-nk444.h5'
 import time
 df_build_time = time.time()
 mf.with_df = df.build()
