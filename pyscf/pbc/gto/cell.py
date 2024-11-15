@@ -789,9 +789,10 @@ def ewald(cell, ew_eta=None, ew_cut=None, ss_terms=False):
 
     # last line of Eq. (F.5) in Martin
     ewself  = -.5 * np.dot(chargs,chargs) * 2 * ew_eta / np.sqrt(np.pi)
+    ewself_1 = ewself
     if cell.dimension == 3:
         ewself += -.5 * np.sum(chargs)**2 * np.pi/(ew_eta**2 * cell.vol)
-
+    ewself_2 = ewself - ewself_1
     # g-space sum (using g grid) (Eq. (F.6) in Martin, but note errors as below)
     # Eq. (F.6) in Martin is off by a factor of 2, the
     # exponent is wrong (8->4) and the square is in the wrong place
@@ -855,6 +856,7 @@ def ewald(cell, ew_eta=None, ew_cut=None, ss_terms=False):
         raise NotImplementedError
 
     logger.debug(cell, 'Ewald components = %.15g, %.15g, %.15g', ewovrl, ewself, ewg)
+    print("Ewald components = %.15g, %.15g, %.15g,%.15g" % (ewovrl, ewself_1,ewself_2, ewg))
     if ss_terms:
         ewovrl = 0
     return ewovrl + ewself + ewg

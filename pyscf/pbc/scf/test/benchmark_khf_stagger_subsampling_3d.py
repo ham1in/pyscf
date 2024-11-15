@@ -99,9 +99,36 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.omega = 0
     kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
+def build_h2_cell(nk = (1,1,1),kecut=100,vac_dim=6.0,wrap_around=True):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    cell.atom='''
+        H 0.00 0.00 0.00
+        H 0.00 0.00 1.80
+        '''
+    cell.a = np.eye(3)*vac_dim
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+
+    
+    
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    
+    cell.ke_cutoff = kecut
+    cell.max_memory = 1000
+    cell.precision = 1e-8
+    #for i in range(len(cell.atom)):
+    #   cell.atom[i][1] = tuple(np.dot(np.array(cell.atom[i][1]),np.array(cell.a)))
+    cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
+    return cell, kpts
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_diamond_cell(nk=kmesh,kecut=56)
+
+cell, kpts= build_h2_cell(nk=kmesh,kecut=56)
 
 cell.dimension = 3
 

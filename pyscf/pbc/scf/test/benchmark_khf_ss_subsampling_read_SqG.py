@@ -284,8 +284,8 @@ sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=7,dm_kpts=dm_kpt
 
 ss_params = {
     'debug': False,
-    'r1_prefactor':100,
-    'nlocal': 11,
+    'r1_prefactor':1,
+    'nlocal': 3,
     'localizer': localizer,
     'subtract_nocc': 2,
     'subtract_nocc_sigma': sigmas,
@@ -303,8 +303,6 @@ ss_params = {
     'r1_power_law_start':1,
 }
 
-
-
-
 results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector, df_type=df_type, khf_routine="singularity_subtraction",
-                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mf.mo_coeff_kpts, dm_kpts=dm_kpts)
+                         wrap_around=wrap_around,ss_params=ss_params,sanity_run=False,mo_coeff_kpts=mf.mo_coeff_kpts,
+                         dm_kpts=dm_kpts)
