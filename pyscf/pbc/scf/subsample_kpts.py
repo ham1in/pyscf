@@ -199,7 +199,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
 
             # M = np.array([1,1,1])
 
-            if ss_params['r1_prefactor'] == "precompute":
+            if ss_r1_prefactor == "precompute":
                 from pyscf.pbc.scf.khf import precompute_r1_prefactor
                 # print('Using power law exponent {0} for r1_prefactor '.format(ss_r1_power_law_exponent), file=f,flush=True)
                 print('r1 precompute requested, gamma = {0}, delta = {1}, r1_power_law_exponent = {2}'.format(ss_gamma,ss_delta,ss_r1_power_law_exponent), file=f,flush=True)

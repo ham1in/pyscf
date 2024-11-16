@@ -1539,6 +1539,8 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
 
     if np.isscalar(N_local):
         N_local = np.array([N_local]*dim)
+    else:
+        N_local = np.array(N_local)
     N_local_x, N_local_y, N_local_z = N_local
 
     kpts = cell.make_kpts(nks, wrap_around=True)
@@ -1726,7 +1728,8 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
     import pymp
 
     build_SqG_start_time = time.time()
-    SqG = pymp.shared.array((nkpts, nG), dtype=np.float64)
+    # SqG = pymp.shared.array((nkpts, nG), dtype=np.float64)
+    SqG = np.zeros((nkpts, nG), dtype=np.float64)
     print("SqG MEM USAGE (KB) IS: {:.3f}".format( SqG.nbytes / (1024)))
 
     # nthreads = int(os.environ['OMP_NUM_THREADS'])
@@ -1914,7 +1917,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
         if subtract_nocc == 2:
             # Remove nocc*exp(-vareps*|q|^2)
             subtract_nocc_sigma = np.array(subtract_nocc_sigma)
-            subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-1/2))
+            subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-2))
             vareps_x, vareps_y, vareps_z = subtract_nocc_vareps
             ew_eta = 1./2. * np.mean(subtract_nocc_vareps**(-1/2)) # assume isotropic
             vareps_mean = 1./4. * ew_eta ** (-2)
@@ -2393,7 +2396,6 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     nocc = kmf.cell.tot_electrons() // 2
     nk = get_monkhorst_pack_size(kmf.cell, kpts)
     Nk = np.prod(nk)
-    # dm_kpts = kmf.make_rdm1() ## make input
     kmf.exxdiv = None
     _, K = kmf.get_jk(cell=kmf.cell, dm_kpts=dm_kpts, kpts=kpts, kpts_band=kpts,exxdiv=None)
     E_standard = -1. / Nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
@@ -2401,30 +2403,14 @@ def make_ss_inputs(kmf,kpts,dm_kpts, mo_coeff_kpts):
     E_madelung = E_standard - nocc * Madelung
     print(E_madelung)
 
-    # Saving the wavefunction data (Strange MKL error just feeding mo_coeff...)
-    # mo_coeff_kpts = kmf.mo_coeff_kpts # make input as well
-    # Lvec_real = kmf.cell.lattice_vectors()
-    # NsCell = np.array(kmf.cell.mesh)
-    # L_delta = Lvec_real / NsCell[:, None]
-    # dvol = np.abs(np.linalg.det(L_delta))
-    # xv, yv, zv = np.meshgrid(np.arange(NsCell[0]), np.arange(NsCell[1]), np.arange(NsCell[2]), indexing='ij')
-    # mesh_idx = np.hstack([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1)])
-    # rptGrid3D = mesh_idx @ L_delta
-    # aoval = kmf.cell.pbc_eval_gto("GTOval_sph", coords=rptGrid3D, kpts=kpts)
+    # Construct Grids 
+
     shiftFac=np.zeros(3)
     kshift_abs = np.sum(kmf.cell.reciprocal_vectors()*shiftFac / nk,axis=0)
     qGrid = minimum_image(kmf.cell, kshift_abs - kpts)
     kGrid = minimum_image(kmf.cell, kpts)
 
-    # nbands = nocc
-    # nG = np.prod(NsCell)
-    # uKpts = np.zeros((Nk, nbands, nG), dtype=complex)
-    # for k in range(Nk):
-    #     for n in range(nbands):
-    #         utmp = aoval[k] @ np.reshape(mo_coeff_kpts[k][:, n], (-1, 1))
-    #         exp_part = np.exp(-1j * (rptGrid3D @ np.reshape(kGrid[k], (-1, 1))))
-    #         uKpts[k, n, :] = np.squeeze(exp_part * utmp)
-
+    # Construct the wavefunctions
     uKpts = build_uKpts(kmf, kpts, dm_kpts, mo_coeff_kpts)
     ss_inputs_end = time.time()
     print(f"Time taken for building uKpts: {ss_inputs_end - ss_inputs_start:.2f} s")
