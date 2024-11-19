@@ -1867,7 +1867,7 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=0,
-              subtract_nocc_func=None, full_domain=True,nufft_gl=True,
+              subtract_nocc_func=None, subtract_nocc_gauss_params=None, full_domain=True,nufft_gl=True,
               n_fft=400,vhR_symm=True, H_use_unscaled=False, SqG_filename=None):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
@@ -1910,9 +1910,12 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     nkpts = np.prod(nks)
     dim = 3
 
-    if subtract_nocc == 2 and subtract_nocc_func is None:
-        print('Assuming correction of SqG-Nocc')
-        subtract_nocc_func = lambda xyz: nocc*np.ones(xyz.shape[0])
+    if subtract_nocc == 2:
+        if subtract_nocc_gauss_params is None:
+            raise ValueError("subtract_nocc_gauss_params must be provided for subtract_nocc=2")
+        if subtract_nocc_func is None:
+            print('Assuming correction of SqG-Nocc')
+            subtract_nocc_func = lambda xyz: nocc*np.ones(xyz.shape[0])
 
 
     #   Step 1: compute the pair product in reciproal space
@@ -1988,19 +1991,21 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
 
         if subtract_nocc == 2:
             # Remove nocc*exp(-vareps*|q|^2)
-            subtract_nocc_sigma = np.array(subtract_nocc_sigma)
-            subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-2))
-            vareps_x, vareps_y, vareps_z = subtract_nocc_vareps
-            ew_eta = 1./2. * np.mean(subtract_nocc_vareps**(-1/2)) # assume isotropic
-            vareps_mean = 1./4. * ew_eta ** (-2)
-            print('Subtracting nocc*exp(-vareps*|q|^2) with vareps = ', subtract_nocc_vareps)
-            print('Assuming isotropic. varepes_mean = ', vareps_mean)
+            # subtract_nocc_sigma = np.array(subtract_nocc_sigma)
+            # subtract_nocc_vareps = 1./2. * (subtract_nocc_sigma**(-2))
+            # vareps_x, vareps_y, vareps_z = subtract_nocc_vareps
+            # ew_eta = 1./2. * np.mean(subtract_nocc_vareps**(-1/2)) # assume isotropic
+            # vareps_mean = 1./4. * ew_eta ** (-2)
+            # print('Subtracting nocc*exp(-vareps*|q|^2) with vareps = ', subtract_nocc_vareps)
+            # print('Assuming isotropic. varepes_mean = ', vareps_mean)
 
+            print('Subtracting contracted gaussians from SqG')
             for iq, qpt in enumerate(qGrid):
                 qG = qpt[None, :] + GptGrid3D
                 # exp_term = np.exp(vareps_x * qG[:, 0]**2 + vareps_y * qG[:, 1]**2 + vareps_z * qG[:, 2]**2)
-                exp_term = np.exp(-(vareps_mean * qG[:, 0]**2 + vareps_mean * qG[:, 1]**2 + vareps_mean * qG[:, 2]**2))
-                SqG[iq, :] = SqG[iq, :] - nocc * exp_term
+                # exp_term = np.exp(-(vareps_mean * qG[:, 0]**2 + vareps_mean * qG[:, 1]**2 + vareps_mean * qG[:, 2]**2))
+                # SqG[iq, :] = SqG[iq, :] - nocc * exp_term
+                SqG[iq, :] = SqG[iq, :] - subtract_nocc_func(qG)
             assert np.abs(SqG[0, 0]) < 1e-4
     else:
         assert np.abs(SqG[0, 0]) - nocc < 1e-4
@@ -2146,8 +2151,6 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
 
         e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
     e_ex_ss2 = np.real(prefactor_ex * 4 * np.pi * e_ex_ss2)
-    
-    
     ss_end_time = time.time()
     print(f"Time taken for SS correction: {ss_end_time - ss_start_time:.2f}")
 
