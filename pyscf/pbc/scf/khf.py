@@ -1533,7 +1533,62 @@ def build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip):
     return GptGrid3D_local
 
 
-def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None, SqG_filename=None):
+# Define contracted gaussian model
+def contracted_gaussian_model(params, xyz, num_gaussians=1):
+    # Define Gaussian model function
+    # xyz in shape (n, 3)
+    def gaussian_model(params, xyz):
+        mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params
+        exponent = -((xyz[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
+                     (xyz[:, 1] - mu_y) ** 2 / (2 * sigma_y ** 2) +
+                     (xyz[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
+        return np.exp(exponent) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
+
+    assert len(params) == 7 * num_gaussians
+    result = np.zeros(xyz.shape[0])
+    for i in range(num_gaussians):
+        c_i, mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params[i * 7:(i + 1) * 7]
+        result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], xyz)
+
+    return result
+
+def fit_gaussians_3d(xyz, f, nocc, subtract_nocc=False, num_gaussians=1, force_isotropy=False):
+
+    # Initial guess for parameters
+    initial_guess = [nocc/num_gaussians, np.mean(xyz[:, 0]), np.mean(xyz[:, 1]), np.mean(xyz[:, 2]),
+                     np.std(xyz[:, 0]), np.std(xyz[:, 1]), np.std(xyz[:, 2])] * num_gaussians
+
+    # Perform the curve fitting
+    def residuals(params, xyz, f):
+        return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
+
+    # Constraint where all c_i must be positive and sum to 1
+    def normalization(params):
+        return np.sum(params[::7]) - nocc
+
+    constraints = [
+        {'type': 'eq', 'fun': normalization},
+    ]
+
+    if force_isotropy:
+        for i in range(num_gaussians):
+            constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+4] - params[i*7+5]})
+            constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+4] - params[i*7+6]})
+
+    from scipy.optimize import least_squares,minimize
+    result = minimize(residuals, initial_guess, args=(xyz, f), constraints=constraints)
+    # result = least_squares(residuals, initial_guess, args=(xyz, f))
+    params = result.x
+
+    # Print parameters for each gaussian
+    for i in range(num_gaussians):
+        print(f'Gaussian {i+1} parameters: c = {params[i*7]:.6f}, mu_x = {params[i*7+1]:.6f}, mu_y = {params[i*7+2]:.6f}, mu_z = {params[i*7+3]:.6f}, '
+              f'sigma_x = {params[i*7+4]:.6f}, sigma_y = {params[i*7+5]:.6f}, sigma_z = {params[i*7+6]:.6f}')
+
+    return params
+
+def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None,
+                           SqG_filename=None, num_gaussians=1, return_all_params=False):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1641,35 +1696,47 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
         qG_full[start_idx:end_idx, :] = qG
         SqG_local_full[start_idx:end_idx] = SqG[iq, :]
 
-    # Define Gaussian model function
-    def gaussian_model(params, x):
-        mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params
-        exponent = -((x[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
-                     (x[:, 1] - mu_y) ** 2 / (2 * sigma_y ** 2) +
-                     (x[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
-        return nocc * np.exp(exponent) #if not subtract_nocc else -nocc + nocc * np.exp(exponent)
+    # # Define Gaussian model function
+    # def gaussian_model(params, x):
+    #     mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params
+    #     exponent = -((x[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
+    #                  (x[:, 1] - mu_y) ** 2 / (2 * sigma_y ** 2) +
+    #                  (x[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
+    #     return nocc * np.exp(exponent) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
 
-    # Initial guess for parameters
-    initial_guess = [np.mean(qG_full[:, 0]), np.mean(qG_full[:, 1]), np.mean(qG_full[:, 2]),
-                     np.std(qG_full[:, 0]), np.std(qG_full[:, 1]), np.std(qG_full[:, 2])]
+    # # Define contracted gaussian model
+    # def contracted_gaussian_model(params, x, num_gaussians=1):
+    #     assert len(params) == 7 * num_gaussians
+    #     result = np.zeros(x.shape[0])
+    #     for i in range(num_gaussians):
+    #         c_i, mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params[i * 7:(i + 1) * 7]
+    #         result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], x)
 
-    # Perform the curve fitting
-    def residuals(params, x, y):
-        return gaussian_model(params, x) - y
+    #     return result
 
-    from scipy.optimize import least_squares
-    result = least_squares(residuals, initial_guess, args=(qG_full, SqG_local_full))
-    params = result.x
+    # # Initial guess for parameters
+    # initial_guess = [np.mean(qG_full[:, 0]), np.mean(qG_full[:, 1]), np.mean(qG_full[:, 2]),
+    #                  np.std(qG_full[:, 0]), np.std(qG_full[:, 1]), np.std(qG_full[:, 2])]
 
-    # Extract sigma values
-    sigma = params[3:6]
+    # # Perform the curve fitting
+    # def residuals(params, x, y):
+    #     return gaussian_model(params, x) - y
 
-    # Print results
-    print(f'params are {params[0]:.6f}, {params[1]:.6f}, {params[2]:.6f}, '
-          f'{params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
-    print(f'Sx, Sy, Sz (1 sigma) are {params[3]:.6f}, {params[4]:.6f}, {params[5]:.6f}')
+    # from scipy.optimize import least_squares
+    # result = least_squares(residuals, initial_guess, args=(qG_full, SqG_local_full))
+    # params = result.x
 
-    return sigma
+    # Fit Gaussian to data
+    params = fit_gaussians_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians)
+
+    # Extract sigma values or all parameters
+    if return_all_params:
+        return params
+    else:
+        sigmas = []
+        for i in range(num_gaussians):
+            sigmas.extend(params[i*7+3:i*7+6])
+        return sigmas
 
 def precompute_r1_prefactor(power_law_start,power_law_exponent,Nk,delta,gamma,M,r1,normal_vector):
     # # scaled_normal_vector = normal_vector*r1
@@ -1734,7 +1801,7 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
 
     # nthreads = int(os.environ['OMP_NUM_THREADS'])
     # with pymp.Parallel(np.min([nthreads, 4])) as p:
-    
+
     if debug_options:
         nqG = np.prod(NsCell)*nkpts
         qG_full = np.zeros([nqG,3])
@@ -1800,7 +1867,7 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=0,
-              subtract_nocc_sigma=np.array([0.0,0.0,0.0]), full_domain=True,nufft_gl=True,
+              subtract_nocc_func=None, full_domain=True,nufft_gl=True,
               n_fft=400,vhR_symm=True, H_use_unscaled=False, SqG_filename=None):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
@@ -1842,6 +1909,11 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     nocc = cell.tot_electrons() // 2
     nkpts = np.prod(nks)
     dim = 3
+
+    if subtract_nocc == 2 and subtract_nocc_func is None:
+        print('Assuming correction of SqG-Nocc')
+        subtract_nocc_func = lambda xyz: nocc*np.ones(xyz.shape[0])
+
 
     #   Step 1: compute the pair product in reciproal space
 

@@ -8,7 +8,7 @@ import copy
 #                    wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
 #                    ss_subtract_nocc=False,ss_use_sqG_anisotropy=False,ss_nufft_gl=False,ss_n_fft=400):
 def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-                   wrap_around=False, sanity_run=False, with_gamma_point=True, ss_params=None):
+                   wrap_around=False, sanity_run=False, with_gamma_point=True, ss_params={}):
     """
 
     Args:
@@ -32,6 +32,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
 
     nks = pbc_tools.get_monkhorst_pack_size(cell=mf.cell, kpts=mf.kpts)
     nk = np.prod(nks)
+    nocc = mf.cell.nelectron // 2
     assert nk % (np.prod(div_vector) ** dim) == 0, "Div vector must divide nk"
     assert dim == mf.cell.dimension, "Dimension must match cell dimension"
     # assert(nk / (np.prod(div_vector) ** dim) !=0, "Div vector has more divisions than what is possible.")
@@ -114,32 +115,40 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     if khf_routine in khf_routines_stagger:
         print('Warning, no J term computed', file=f)
 
-    if ss_params:
-        # assert(ss_params)
-        # Unpack params
-        ss_localizer = ss_params['localizer']
-        ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
-        ss_nlocal = ss_params.get('nlocal', 3)
-        ss_r1_prefactor = ss_params.get('r1_prefactor', 1.0)
-        ss_H_use_unscaled = ss_params.get('H_use_unscaled', False)  
-        ss_SqG_filenames = ss_params.get('SqG_filenames', [None]*len(div_vector))
-        ss_gamma = ss_params.get('gamma', 1e-4)
-        ss_delta = ss_params.get('delta', 0.5)
-        ss_r1_power_law_exponent = ss_params.get('r1_power_law_exponent', -1)
-        ss_r1_power_law_start = ss_params.get('r1_power_law_start', 1)
-        ss_subtract_nocc = ss_params.get('subtract_nocc', False)
-        ss_subtract_nocc_sigma = ss_params.get('subtract_nocc_sigma', np.zeros([0,0,0]))
-        M = np.array([1,1,1])
+    # if ss_params:
+    # assert(ss_params)
+    # Unpack params for SS if they exist
+    ss_localizer = ss_params['localizer']
+    ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
+    ss_nlocal = ss_params.get('nlocal', 3)
+    ss_r1_prefactor = ss_params.get('r1_prefactor', 1.0)
+    ss_H_use_unscaled = ss_params.get('H_use_unscaled', False)  
+    ss_SqG_filenames = ss_params.get('SqG_filenames', [None]*len(div_vector))
+    ss_gamma = ss_params.get('gamma', 1e-4)
+    ss_delta = ss_params.get('delta', 0.5)
+    ss_r1_power_law_exponent = ss_params.get('r1_power_law_exponent', -1)
+    ss_r1_power_law_start = ss_params.get('r1_power_law_start', 1)
+    ss_subtract_nocc = ss_params.get('subtract_nocc', False)
+    ss_subtract_nocc_func = ss_params.get('subtract_nocc_func', lambda xyz: nocc*np.ones(len(xyz)))
+    ss_use_sqG_anisotropy = ss_params.get('use_sqG_anisotropy', False)
+    ss_n_fft = ss_params.get('n_fft', 400)
+    ss_nufft_gl = ss_params.get('nufft_gl', False)
+    ss_debug = ss_params.get('debug', False)
+    ss_vhR_symm = ss_params.get('vhR_symm', False)
 
-        if ss_params['use_sqG_anisotropy']:
-            assert (khf_routine in khf_routines_ss)
-            assert (mf.cell.dimension == 3)
-            from pyscf.pbc.scf.khf import compute_SqG_anisotropy
-            if 'M' in ss_params.keys():
-                M = ss_params['M']
-            else:
-                print('Computing SqG anisotropy', file=f)
-                M = compute_SqG_anisotropy(cell=mf.cell, nk=nks, N_local=7)
+
+
+    M = np.array([1,1,1])
+
+    if ss_use_sqG_anisotropy:
+        assert (khf_routine in khf_routines_ss)
+        assert (mf.cell.dimension == 3)
+        from pyscf.pbc.scf.khf import compute_SqG_anisotropy
+        if 'M' in ss_params.keys():
+            M = ss_params['M']
+        else:
+            print('Computing SqG anisotropy', file=f)
+            M = compute_SqG_anisotropy(cell=mf.cell, nk=nks, N_local=7)
 
     # for div in div_vector:
     start_ind = 0
@@ -217,14 +226,16 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
 
             if mf.cell.dimension ==3:
                 e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung,
-                                                               N_local=ss_params['nlocal'],
-                                                               debug=ss_params['debug'],
-                                                               localizer=ss_localizer_M, r1_prefactor=ss_r1_prefactor,
+                                                               N_local=ss_nlocal,
+                                                               debug=ss_debug,
+                                                               localizer=ss_localizer_M,
+                                                               r1_prefactor=ss_r1_prefactor,
                                                                fourier_only=fourier_only,
-                                                               subtract_nocc=ss_params['subtract_nocc'],
-                                                               subtract_nocc_sigma=ss_params['subtract_nocc_sigma'],
-                                                               nufft_gl=ss_params['nufft_gl'], n_fft=ss_params['n_fft'],
-                                                               vhR_symm=ss_params['vhR_symm'],
+                                                               subtract_nocc=ss_subtract_nocc,
+                                                               subtract_nocc_func=ss_subtract_nocc_func,
+                                                               nufft_gl=ss_nufft_gl,
+                                                               n_fft=ss_n_fft,
+                                                               vhR_symm=ss_vhR_symm,
                                                                H_use_unscaled=ss_H_use_unscaled,
                                                                SqG_filename=ss_SqG_filenames[k])
 
