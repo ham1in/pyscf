@@ -115,7 +115,7 @@ Si  2.57177646209   2.57177646209   2.57177646209
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = 'gth-szv'
+    cell.basis = 'gth-szv-molopt-sr'
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
@@ -188,21 +188,21 @@ P   0.0000000   1.9799090   5.0557003
     return cell, kpts
 
 wrap_around = True
-nkx = 2
+nkx = 4
 kmesh = [nkx, nkx, nkx]
 vac_dim = 3.0 # bohr
-cell, kpts= build_h2_cell(nk=kmesh,kecut=56,wrap_around=wrap_around,vac_dim=vac_dim)
+cell, kpts= build_diamond_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
 cell.build()
 
 print('Kmesh:', kmesh)
 
 mf = khf.KRHF(cell, exxdiv='ewald')
-mf.chkfile = 'H2_small-kmf-nk444.chk'
+mf.chkfile = 'diamond-kmf-nk444.chk'
 df_type = df.GDF
 
 df = df_type(cell, kpts)
-df._cderi_to_save = 'H2_small-df-nk444.h5'
+df._cderi_to_save = 'diamond-df-nk444.h5'
 import time
 df_build_time = time.time()
 mf.with_df = df.build()

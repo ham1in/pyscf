@@ -2945,7 +2945,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,nks,N_local,r1_h,us
         if use_h:
             # VR = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d.shape[0]))
             print('Computing VR, no. of elements: ', Ggrid_3d.shape[0])
-            tenth_marker = Ggrid_3d.shape[0] // 10
+            tenth_marker = np.min(Ggrid_3d.shape[0] // 10,1)
             progress = 0
             for k in range(Ggrid_3d.shape[0]):
                 Rvec = Ggrid_3d[k, :]

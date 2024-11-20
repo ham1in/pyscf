@@ -97,40 +97,31 @@ def build_bn_monolayer_cell(nk=(1, 1, 1), kecut=100):
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
 
-def build_H2_cell(nk = (1,1,1),kecut=100,wrap_around=False):
+def build_h2_cell(nk = (1,1,1),kecut=100,vac_dim=6.0,wrap_around=True):
     cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
     cell.atom='''
-        H 3.00   3.00   2.10
-        H 3.00   3.00   3.90
+        H 0.00 0.00 0.00
+        H 0.00 0.00 1.80
         '''
-    cell.a = '''
-        6.0   0.0   0.0
-        0.0   6.0   0.0
-        0.0   0.0   6.0
-        '''
-    # cell.atom='''
-    #     H 1.50   1.50   2.10
-    #     H 1.50   1.50   3.90
-    #     '''
-    # cell.a = '''
-    #     3.0   0.0   0.0
-    #     0.0   3.0   0.0
-    #     0.0   0.0   24.0
-    #     '''
-    cell.unit = 'B'
+    cell.a = np.eye(3)*vac_dim
 
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = {'H':'gth-szv'}
+
+    
+    
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    cell.dimension = 3
+    
     cell.ke_cutoff = kecut
-    cell.max_memory = 5000
+    cell.max_memory = 1000
+    cell.precision = 1e-8
+    #for i in range(len(cell.atom)):
+    #   cell.atom[i][1] = tuple(np.dot(np.array(cell.atom[i][1]),np.array(cell.a)))
     cell.build()
-    cell.omega = 0
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around)
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
     return cell, kpts
 
 
@@ -197,13 +188,12 @@ P   0.0000000   1.9799090   5.0557003
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
 
-wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+wrap_around=True
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56)
 cell.dimension = 3
 cell.build()
-
 print('Kmesh:', kmesh)
 
 
@@ -268,8 +258,8 @@ div_vector = [1,2]
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
 def localizer(q,r1,M=np.array([1,1,1])):
-    return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
-    # return ss_localizers.localizer_unity(q,r1)
+    # return ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
+    return ss_localizers.localizer_unity(q,r1)
     # return ss_localizers.localizer(q,r1)
 
 # localizer = lambda q,r1,M: ss_localizers.localizer_gauss(q,r1)
@@ -279,16 +269,16 @@ def localizer(q,r1,M=np.array([1,1,1])):
 # Compute SqG anisotropy, use for subtract_nocc_sigma
 from pyscf.pbc.scf.khf import compute_SqG_anisotropy
 
-sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=7,dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts,
+sigmas = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[5,17,8],dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts,
                                 SqG_filename='phosphorous_SqG_nk222.npy')
 
 ss_params = {
     'debug': False,
-    'r1_prefactor':1,
+    # 'r1_prefactor':10.0,
     'nlocal': 3,
     'localizer': localizer,
     'subtract_nocc': 2,
-    'subtract_nocc_sigma': sigmas,
+    'subtract_nocc_sigma': 0.65*sigmas,
     'use_sqG_anisotropy': False,
     'nufft_gl': True,
     'n_fft': 350,
