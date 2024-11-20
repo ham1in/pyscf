@@ -136,6 +136,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     ss_debug = ss_params.get('debug', False)
     ss_vhR_symm = ss_params.get('vhR_symm', False)
     ss_subtract_nocc_gauss_params = ss_params.get('subtract_nocc_gauss_params', None)
+    ss_subtract_nocc_num_gaussians = ss_params.get('subtract_nocc_num_gaussians', 1)
 
 
 
@@ -235,6 +236,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                                                                subtract_nocc=ss_subtract_nocc,
                                                                subtract_nocc_func=ss_subtract_nocc_func,
                                                                subtract_nocc_gauss_params=ss_subtract_nocc_gauss_params,
+                                                               subtract_nocc_num_gaussians=ss_subtract_nocc_num_gaussians,
                                                                nufft_gl=ss_nufft_gl,
                                                                n_fft=ss_n_fft,
                                                                vhR_symm=ss_vhR_symm,

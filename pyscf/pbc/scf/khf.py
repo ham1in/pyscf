@@ -1551,39 +1551,96 @@ def contracted_gaussian_model(params, xyz, num_gaussians=1):
         result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], xyz)
 
     return result
+def contracted_gaussian_model_centered(params, xyz, num_gaussians=1):
+    # Define Gaussian model function
+    # xyz in shape (n, 3)
+    num_gauss_params = 4 # per gaussian
+    def gaussian_model(params, xyz):
+        sigma_x, sigma_y, sigma_z = params
+        exponent = -((xyz[:, 0]) ** 2 / (2 * sigma_x ** 2) +
+                     (xyz[:, 1]) ** 2 / (2 * sigma_y ** 2) +
+                     (xyz[:, 2]) ** 2 / (2 * sigma_z ** 2))
+        return np.exp(exponent) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
 
-def fit_gaussians_3d(xyz, f, nocc, subtract_nocc=False, num_gaussians=1, force_isotropy=False):
+    assert len(params) == num_gauss_params * num_gaussians
+    result = np.zeros(xyz.shape[0])
+    for i in range(num_gaussians):
+        c_i, sigma_x, sigma_y, sigma_z = params[i * num_gauss_params:(i + 1) * num_gauss_params]
+        result += c_i * gaussian_model([sigma_x, sigma_y, sigma_z], xyz)
+
+    return result
+
+def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropy=False, force_centered=False):
 
     # Initial guess for parameters
-    initial_guess = [nocc/num_gaussians, np.mean(xyz[:, 0]), np.mean(xyz[:, 1]), np.mean(xyz[:, 2]),
-                     np.std(xyz[:, 0]), np.std(xyz[:, 1]), np.std(xyz[:, 2])] * num_gaussians
+    # initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0,
+    #                  np.std(xyz_input[:, 0]), np.std(xyz_input[:, 1]), np.std(xyz_input[:, 2])] * num_gaussians
+    if force_centered:
+        initial_guess = [nocc/num_gaussians, 1.5, 1.5, 1.5] * num_gaussians
+        num_gauss_params = 4
+        offset = 0
 
-    # Perform the curve fitting
-    def residuals(params, xyz, f):
-        return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
+        def residuals(params, xyz, f):
+            # return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
+            # Least squares
+            return np.sum((contracted_gaussian_model_centered(params, xyz, num_gaussians=num_gaussians) - f) ** 2)
+    else:
+        initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0, 1.5, 1.5, 1.5] * num_gaussians
+        num_gauss_params = 7
+        offset = 3
+
+        # Perform the curve fitting
+        def residuals(params, xyz, f):
+            # return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
+            # Least squares
+            return np.sum((contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f) ** 2)
 
     # Constraint where all c_i must be positive and sum to 1
     def normalization(params):
-        return np.sum(params[::7]) - nocc
+        return np.sum(params[::num_gauss_params]) - nocc
 
     constraints = [
         {'type': 'eq', 'fun': normalization},
     ]
 
-    if force_isotropy:
-        for i in range(num_gaussians):
-            constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+4] - params[i*7+5]})
-            constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+4] - params[i*7+6]})
+    for i in range(num_gaussians):
+        # Enforce non-negative sigmas
+        # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+4]})
+        # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+5]})
+        # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+6]})
+
+        if force_isotropy:
+            constraints.append(
+                {'type': 'eq',
+                 'fun': lambda params: params[i*num_gauss_params+offset+1] - params[i*num_gauss_params+offset+2]})
+            constraints.append(
+                {'type': 'eq',
+                 'fun': lambda params: params[i*num_gauss_params+offset+2] - params[i*num_gauss_params+offset+3]})        # if force_centered:
+        #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+1]})
+        #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+2]})
+        #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+3]})
+
+
+    # Force positive c values
+    single_bound = [(0, None)] + [(None, None)] * (num_gauss_params - 1)
+    bounds = single_bound * num_gaussians
 
     from scipy.optimize import least_squares,minimize
-    result = minimize(residuals, initial_guess, args=(xyz, f), constraints=constraints)
+    result = minimize(residuals, initial_guess, args=(xyz_input, f_input), constraints=constraints,bounds=bounds)
     # result = least_squares(residuals, initial_guess, args=(xyz, f))
     params = result.x
 
     # Print parameters for each gaussian
-    for i in range(num_gaussians):
-        print(f'Gaussian {i+1} parameters: c = {params[i*7]:.6f}, mu_x = {params[i*7+1]:.6f}, mu_y = {params[i*7+2]:.6f}, mu_z = {params[i*7+3]:.6f}, '
-              f'sigma_x = {params[i*7+4]:.6f}, sigma_y = {params[i*7+5]:.6f}, sigma_z = {params[i*7+6]:.6f}')
+    if force_centered:
+        for i in range(num_gaussians):
+            print(f'Gaussian {i+1} parameters: c = {params[i*num_gauss_params]:.6f}, mu_x = 0.0, mu_y = 0.0, mu_z = 0.0,'
+                  f'sigma_x = {params[i*num_gauss_params+1]:.6f}, sigma_y = {params[i*num_gauss_params+2]:.6f},'
+                  f'sigma_z = {params[i*num_gauss_params+3]:.6f}')
+    else:
+        for i in range(num_gaussians):
+            print(f'Gaussian {i+1} parameters: c = {params[i*num_gauss_params]:.6f}, mu_x = {params[i*num_gauss_params+1]:.6f}, mu_y = {params[i*num_gauss_params+2]:.6f}, mu_z = {params[i*num_gauss_params+3]:.6f}, '
+                 f'sigma_x = {params[i*num_gauss_params+4]:.6f}, sigma_y = {params[i*num_gauss_params+5]:.6f}, sigma_z = {params[i*num_gauss_params+6]:.6f}')
+        # if sigmas are negative, make them positive
 
     return params
 
@@ -1727,7 +1784,8 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
     # params = result.x
 
     # Fit Gaussian to data
-    params = fit_gaussians_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians)
+    params = fit_gaussians_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
+                              force_centered=True)
 
     # Extract sigma values or all parameters
     if return_all_params:
@@ -1867,8 +1925,8 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=0,
-              subtract_nocc_func=None, subtract_nocc_gauss_params=None, full_domain=True,nufft_gl=True,
-              n_fft=400,vhR_symm=True, H_use_unscaled=False, SqG_filename=None):
+              subtract_nocc_func=None, subtract_nocc_gauss_params=None,subtract_nocc_num_gaussians=1, full_domain=True, 
+              nufft_gl=True,n_fft=400,vhR_symm=True, H_use_unscaled=False, SqG_filename=None):
     """
     Perform Singularity Subtraction for Fock Exchange (3D) calculation.
 
@@ -1891,7 +1949,7 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     import time
     from scipy.special import sici
     import pyscf.pbc.scf.ss_localizers as ss_localizers
-    
+
     print("Singularity Subtraction for Fock Exchange (3D) requested")
     ss_start_time = time.time()
 
@@ -2125,13 +2183,25 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
         e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
     elif subtract_nocc == 2:
         shifted = np.array([0,0,0])
-        # ew_eta = 20
-        # ew_eta = 0.219935106676302
-        chi = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta)
+
+        chi = 0
+        print('Computing Integral terms for Modified Madelung correction')
+        for i in range(subtract_nocc_num_gaussians):
+            c_i, sigma_x, sigma_y, sigma_z = subtract_nocc_gauss_params[i*4:(i+1)*4]
+            ew_eta_i = 1./2. * np.mean([sigma_x, sigma_y, sigma_z])**(-1/2) # TODO: Implement anisotropy
+            # ew_eta = 20
+            # ew_eta = 0.219935106676302
+            chi_i = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta_i)
+            chi = chi + c_i * chi_i
+            print("Term ", i)
+            print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
+            print(f" Input ew_eta:     {ew_eta_i:.12f}")
+            print(f" Coefficient:      {c_i:.12f}")
+            print(f" Chi:              {chi_i:.12f}")
+            print(f" Contribution:     {c_i * chi_i:.12f}")
+
         ex_madelung_modified = ex_standard + nocc * chi
-        print(f"Input ew_eta: {ew_eta:.6f}")
-        print(f"Modified Madelung correction: ", chi)
-        print(f"Ex Madelung: {ex_madelung:.6f}, Ex Madelung Modified: {ex_madelung_modified:.6f}")
+        print(f"Ex Madelung: {ex_madelung:.12f}, Ex Madelung Modified: {ex_madelung_modified:.12f}")
         e_ex_ss = np.real(ex_madelung_modified + prefactor_ex * ss_correction)
     else:
         e_ex_ss = np.real(ex_standard+prefactor_ex * ss_correction)

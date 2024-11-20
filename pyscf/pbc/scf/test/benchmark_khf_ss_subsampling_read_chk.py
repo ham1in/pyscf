@@ -184,7 +184,7 @@ P   0.0000000   1.9799090   5.0557003
     return cell, kpts
 
 wrap_around = True
-nkx = 4
+nkx = 2
 kmesh = [nkx, nkx, nkx]
 cell, kpts= build_diamond_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
@@ -196,14 +196,14 @@ print('Kmesh:', kmesh)
 
 # Read scf Result
 from pyscf.lib import chkfile
-chkfile_result =chkfile.load('diamond-kmf-nk444.chk','scf')
+chkfile_result =chkfile.load('diamond-kmf-nk222.chk','scf')
 mf = khf.KRHF(cell, exxdiv='ewald')
 mf.__dict__.update(chkfile_result)
 
 # Load GDF's CDERIs
 df_type = df.GDF
 df = df_type(cell, kpts)
-df._cderi = 'diamond-df-nk444.h5'
+df._cderi = 'diamond-df-nk222.h5'
 df._cderi_to_save = None
 mf.with_df = df.build()
 
@@ -231,7 +231,7 @@ print('Ehcore (a.u.) is ', ehcore)
 print('Enuc (a.u.) is ', mf.energy_nuc().real)
 print('Ecoul (a.u.) is ', Ek + Ej)
 
-div_vector = [1,2,2]
+div_vector = [1,2]
 
 import pyscf.pbc.scf.ss_localizers as ss_localizers
 # localizer = lambda q, r1, M: ss_localizers.localizer_gauss_unbounded(q,r1,M=M)
@@ -249,9 +249,9 @@ mf.exxdiv = None  #so that standard energy is computed without madelung
 
 
 from pyscf.pbc.scf.khf import compute_SqG_anisotropy,contracted_gaussian_model
-num_gaussians = 1
-
-params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[5,5,5],dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts,
+num_gaussians = 2
+num_gauss_params = 4
+params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[9,9,9],dm_kpts=dm_kpts,mo_coeff_kpts=mf.mo_coeff_kpts,
                                 num_gaussians=num_gaussians,return_all_params=True)
 
 SqG_model_fit = lambda xyz: contracted_gaussian_model(xyz, params, num_gaussians=num_gaussians)
@@ -264,6 +264,7 @@ ss_params = {
     'subtract_nocc': 2,
     'subtract_nocc_func': SqG_model_fit,
     'subtract_nocc_gauss_params': params,
+    'subtract_nocc_num_gaussians': num_gaussians,
     'use_sqG_anisotropy': False,
     'nufft_gl': True,
     'n_fft': 350,
