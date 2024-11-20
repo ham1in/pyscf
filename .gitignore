@@ -88,3 +88,6 @@ tmp/
 tmp*
 *mat
 *pkl
+*.h5
+*.chk
+*.npy
