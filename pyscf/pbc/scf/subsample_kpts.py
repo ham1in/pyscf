@@ -78,7 +78,8 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
         "Ek_ss_list": [],
         "int_terms": [],
         "quad_terms": [],
-        "Ek_ss_2_list": []
+        "Ek_ss_2_list": [],
+        "Ek_modified_list": [],
     }
 
     stagger_routine_to_type= {
@@ -227,22 +228,25 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
                 print('Precomputed r1_prefactor = ', ss_r1_prefactor, file=f,flush=True)
 
             if mf.cell.dimension ==3:
-                e_ss, ex_ss_2, int_term, quad_term = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung,
-                                                               N_local=ss_nlocal,
-                                                               debug=ss_debug,
-                                                               localizer=ss_localizer_M,
-                                                               r1_prefactor=ss_r1_prefactor,
-                                                               fourier_only=fourier_only,
-                                                               subtract_nocc=ss_subtract_nocc,
-                                                               subtract_nocc_func=ss_subtract_nocc_func,
-                                                               subtract_nocc_gauss_params=ss_subtract_nocc_gauss_params,
-                                                               subtract_nocc_num_gaussians=ss_subtract_nocc_num_gaussians,
-                                                               nufft_gl=ss_nufft_gl,
-                                                               n_fft=ss_n_fft,
-                                                               vhR_symm=ss_vhR_symm,
-                                                               H_use_unscaled=ss_H_use_unscaled,
-                                                               SqG_filename=ss_SqG_filenames[k])
-
+                ss_results = khf_ss_3d(mf, nks, uKpts, E_standard, E_madelung,
+                                       N_local=ss_nlocal,
+                                       debug=ss_debug,
+                                       localizer=ss_localizer_M,
+                                       r1_prefactor=ss_r1_prefactor,
+                                       fourier_only=fourier_only,
+                                       subtract_nocc=ss_subtract_nocc,
+                                       subtract_nocc_func=ss_subtract_nocc_func,
+                                       subtract_nocc_gauss_params=ss_subtract_nocc_gauss_params,
+                                       subtract_nocc_num_gaussians=ss_subtract_nocc_num_gaussians,
+                                       nufft_gl=ss_nufft_gl,
+                                       n_fft=ss_n_fft,
+                                       vhR_symm=ss_vhR_symm,
+                                       H_use_unscaled=ss_H_use_unscaled,
+                                       SqG_filename=ss_SqG_filenames[k])
+                ex_ss_2 = ss_results['e_ex_ss2']
+                e_ss, int_term, quad_term = ss_results['e_ex_ss'], ss_results['int_terms'], ss_results['quad_terms']
+                if ss_subtract_nocc==2:
+                    results["Ek_modified_list"].append(ss_results['e_ex_madelung_modified'])
                 results["Ek_ss_2_list"].append(ex_ss_2)
 
             elif mf.cell.dimension ==2:

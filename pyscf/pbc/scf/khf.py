@@ -1537,6 +1537,8 @@ def build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip):
 def contracted_gaussian_model(params, xyz, num_gaussians=1):
     # Define Gaussian model function
     # xyz in shape (n, 3)
+    num_gauss_params = 7 # per gaussian
+
     def gaussian_model(params, xyz):
         mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params
         exponent = -((xyz[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
@@ -1544,7 +1546,7 @@ def contracted_gaussian_model(params, xyz, num_gaussians=1):
                      (xyz[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
         return np.exp(exponent) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
 
-    assert len(params) == 7 * num_gaussians
+    assert len(params) == num_gauss_params * num_gaussians
     result = np.zeros(xyz.shape[0])
     for i in range(num_gaussians):
         c_i, mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params[i * 7:(i + 1) * 7]
@@ -1555,6 +1557,7 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1):
     # Define Gaussian model function
     # xyz in shape (n, 3)
     num_gauss_params = 4 # per gaussian
+
     def gaussian_model(params, xyz):
         sigma_x, sigma_y, sigma_z = params
         exponent = -((xyz[:, 0]) ** 2 / (2 * sigma_x ** 2) +
@@ -2182,25 +2185,29 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     if subtract_nocc == 1:
         e_ex_ss = np.real(ex_madelung + prefactor_ex * ss_correction)
     elif subtract_nocc == 2:
-        shifted = np.array([0,0,0])
+        num_gauss_params = int(np.rint(len(subtract_nocc_gauss_params)/subtract_nocc_num_gaussians))
+        assert np.isclose(np.sum(subtract_nocc_gauss_params[0::num_gauss_params]), nocc)
 
-        chi = 0
         print('Computing Integral terms for Modified Madelung correction')
+        chi = 0
+        shifted = np.array([0,0,0])
         for i in range(subtract_nocc_num_gaussians):
-            c_i, sigma_x, sigma_y, sigma_z = subtract_nocc_gauss_params[i*4:(i+1)*4]
-            ew_eta_i = 1./2. * np.mean([sigma_x, sigma_y, sigma_z])**(-1/2) # TODO: Implement anisotropy
+            c_i, sigma_x, sigma_y, sigma_z = subtract_nocc_gauss_params[i*num_gauss_params:(i+1)*num_gauss_params]
+            # ew_eta_i = 1./2. * np.mean([sigma_x, sigma_y, sigma_z])**(-1/2) # TODO: Implement anisotropy
+            ew_eta_i = 1./np.sqrt(2.) * np.mean([sigma_x, sigma_y, sigma_z])# TODO: Implement anisotropy
+
             # ew_eta = 20
             # ew_eta = 0.219935106676302
             chi_i = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta_i)
             chi = chi + c_i * chi_i
             print("Term ", i)
             print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
-            print(f" Input ew_eta:     {ew_eta_i:.12f}")
+            print(f" Input ew_eta: {ew_eta_i:.12f}")
             print(f" Coefficient:      {c_i:.12f}")
             print(f" Chi:              {chi_i:.12f}")
             print(f" Contribution:     {c_i * chi_i:.12f}")
 
-        ex_madelung_modified = ex_standard + nocc * chi
+        ex_madelung_modified = ex_standard + chi # no need to multiply by nocc for this case.
         print(f"Ex Madelung: {ex_madelung:.12f}, Ex Madelung Modified: {ex_madelung_modified:.12f}")
         e_ex_ss = np.real(ex_madelung_modified + prefactor_ex * ss_correction)
     else:
@@ -2222,9 +2229,19 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
         e_ex_ss2 += np.real(np.sum(tmp)) * bz_dvol
     e_ex_ss2 = np.real(prefactor_ex * 4 * np.pi * e_ex_ss2)
     ss_end_time = time.time()
-    print(f"Time taken for SS correction: {ss_end_time - ss_start_time:.2f}")
+    print(f"Time taken for SS correction: {ss_end_time - ss_start_time:.2f}\n")
 
-    return e_ex_ss, e_ex_ss2, int_terms, quad_terms
+    results = {
+        'e_ex_ss': e_ex_ss,
+        'e_ex_ss2': e_ex_ss2,
+        'int_terms': int_terms,
+        'quad_terms': quad_terms
+    }
+
+    if subtract_nocc == 2:
+        results['e_ex_madelung_modified'] = ex_madelung_modified
+
+    return results
 
 
 def khf_ss_2d(kmf, nks, uKpts, ex, N_local=7, debug=False, localizer=None, r1_prefactor=1.0):
