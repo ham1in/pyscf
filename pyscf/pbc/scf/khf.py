@@ -1553,10 +1553,12 @@ def contracted_gaussian_model(params, xyz, num_gaussians=1):
         result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], xyz)
 
     return result
-def contracted_gaussian_model_centered(params, xyz, num_gaussians=1):
+def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=False):
     # Define Gaussian model function
     # xyz in shape (n, 3)
     num_gauss_params = 4 # per gaussian
+    if isotropic:
+        num_gauss_params -= 2
 
     def gaussian_model(params, xyz):
         sigma_x, sigma_y, sigma_z = params
@@ -1567,30 +1569,49 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1):
 
     assert len(params) == num_gauss_params * num_gaussians
     result = np.zeros(xyz.shape[0])
-    for i in range(num_gaussians):
-        c_i, sigma_x, sigma_y, sigma_z = params[i * num_gauss_params:(i + 1) * num_gauss_params]
-        result += c_i * gaussian_model([sigma_x, sigma_y, sigma_z], xyz)
+    if isotropic:
+        for i in range(num_gaussians):
+            c_i, sigma = params[i * num_gauss_params:(i + 1) * num_gauss_params]
+            result += c_i * gaussian_model([sigma,sigma,sigma], xyz)
+    else:
+        for i in range(num_gaussians):
+            c_i, sigma_x, sigma_y, sigma_z = params[i * num_gauss_params:(i + 1) * num_gauss_params]
+            result += c_i * gaussian_model([sigma_x, sigma_y, sigma_z], xyz)
 
     return result
 
-def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropy=False, force_centered=False):
+def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropic=False,
+                     force_centered=False):
 
     # Initial guess for parameters
     # initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0,
     #                  np.std(xyz_input[:, 0]), np.std(xyz_input[:, 1]), np.std(xyz_input[:, 2])] * num_gaussians
     if force_centered:
-        initial_guess = [nocc/num_gaussians, 1.5, 1.5, 1.5] * num_gaussians
-        num_gauss_params = 4
-        offset = 0
+        if force_isotropic:
+            initial_guess = [nocc/num_gaussians, 1.5] * num_gaussians
+            num_gauss_params = 2
+            offset = 0
+
+            sigma_indices = [1]
+        else:
+
+            initial_guess = [nocc/num_gaussians, 1.5, 1.5, 1.5] * num_gaussians
+            num_gauss_params = 4
+            offset = 0
+
+            sigma_indices = [1, 2, 3]
 
         def residuals(params, xyz, f):
             # return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
             # Least squares
-            return np.sum((contracted_gaussian_model_centered(params, xyz, num_gaussians=num_gaussians) - f) ** 2)
+            f_fit = contracted_gaussian_model_centered(params, xyz, num_gaussians=num_gaussians,
+                                                       isotropic=force_isotropic)
+            return np.sum((f_fit - f)**2)
     else:
         initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0, 1.5, 1.5, 1.5] * num_gaussians
         num_gauss_params = 7
         offset = 3
+        sigma_indices = [4, 5, 6]
 
         # Perform the curve fitting
         def residuals(params, xyz, f):
@@ -1606,26 +1627,28 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
         {'type': 'eq', 'fun': normalization},
     ]
 
-    for i in range(num_gaussians):
-        # Enforce non-negative sigmas
-        # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+4]})
-        # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+5]})
-        # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+6]})
+    # for i in range(num_gaussians):
+    #     # Enforce non-negative sigmas
+    #     # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+4]})
+    #     # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+5]})
+    #     # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+6]})
 
-        if force_isotropy:
-            constraints.append(
-                {'type': 'eq',
-                 'fun': lambda params: params[i*num_gauss_params+offset+1] - params[i*num_gauss_params+offset+2]})
-            constraints.append(
-                {'type': 'eq',
-                 'fun': lambda params: params[i*num_gauss_params+offset+2] - params[i*num_gauss_params+offset+3]})        # if force_centered:
-        #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+1]})
-        #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+2]})
-        #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+3]})
-
-
-    # Force positive c values
-    single_bound = [(0, None)] + [(None, None)] * (num_gauss_params - 1)
+    #     if force_isotropic:
+    #         constraints.append(
+    #             {'type': 'eq',
+    #              'fun': lambda params: params[i*num_gauss_params+offset+1] - params[i*num_gauss_params+offset+2]})
+    #         constraints.append(
+    #             {'type': 'eq',
+    #              'fun': lambda params: params[i*num_gauss_params+offset+2] - params[i*num_gauss_params+offset+3]})
+    #     #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+1]})
+    #     #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+2]})
+    #     #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+3]})
+  
+    # Force positive c and sigma values
+    single_bound = [(None, None)] * num_gauss_params
+    single_bound[0] = (0.0,None)
+    # for index in sigma_indices:
+    #     single_bound[index] = (0.0, None)
     bounds = single_bound * num_gaussians
 
     from scipy.optimize import least_squares,minimize
@@ -1636,19 +1659,36 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
     # Print parameters for each gaussian
     if force_centered:
         for i in range(num_gaussians):
-            print(f'Gaussian {i+1} parameters: c = {params[i*num_gauss_params]:.6f}, mu_x = 0.0, mu_y = 0.0, mu_z = 0.0,'
-                  f'sigma_x = {params[i*num_gauss_params+1]:.6f}, sigma_y = {params[i*num_gauss_params+2]:.6f},'
-                  f'sigma_z = {params[i*num_gauss_params+3]:.6f}')
+            for j in sigma_indices:
+                if params[i*num_gauss_params+j] < 0:
+                    params[i*num_gauss_params+j] = -params[i*num_gauss_params+j]
+                    print(f' Sigma {j} negative, converting to positive')
+
+            if force_isotropic:
+                print(f'Gaussian {i+1} parameters: c = {params[i*num_gauss_params]:.6f}, mu_x = 0.0,'
+                      f'sigma = {params[i*num_gauss_params+1]:.6f}')
+            else:
+            
+                print(f'Gaussian {i+1} parameters: c = {params[i*num_gauss_params]:.6f}, mu_x = 0.0, mu_y = 0.0, mu_z = 0.0,'
+                    f'sigma_x = {params[i*num_gauss_params+1]:.6f}, sigma_y = {params[i*num_gauss_params+2]:.6f},'
+                    f'sigma_z = {params[i*num_gauss_params+3]:.6f}')
+            # If sigmas are negative, make them positive
+
     else:
         for i in range(num_gaussians):
+            for j in sigma_indices:
+                if params[i*num_gauss_params+j] < 0:
+                    params[i*num_gauss_params+j] = -params[i*num_gauss_params+j]
+                    print(f' Sigma {j} negative, converting to positive')
+
             print(f'Gaussian {i+1} parameters: c = {params[i*num_gauss_params]:.6f}, mu_x = {params[i*num_gauss_params+1]:.6f}, mu_y = {params[i*num_gauss_params+2]:.6f}, mu_z = {params[i*num_gauss_params+3]:.6f}, '
                  f'sigma_x = {params[i*num_gauss_params+4]:.6f}, sigma_y = {params[i*num_gauss_params+5]:.6f}, sigma_z = {params[i*num_gauss_params+6]:.6f}')
-        # if sigmas are negative, make them positive
 
     return params
 
 def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None,
-                           SqG_filename=None, num_gaussians=1, return_all_params=False):
+                           SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True, 
+                           force_isotropic=False):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1756,39 +1796,9 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
         qG_full[start_idx:end_idx, :] = qG
         SqG_local_full[start_idx:end_idx] = SqG[iq, :]
 
-    # # Define Gaussian model function
-    # def gaussian_model(params, x):
-    #     mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params
-    #     exponent = -((x[:, 0] - mu_x) ** 2 / (2 * sigma_x ** 2) +
-    #                  (x[:, 1] - mu_y) ** 2 / (2 * sigma_y ** 2) +
-    #                  (x[:, 2] - mu_z) ** 2 / (2 * sigma_z ** 2))
-    #     return nocc * np.exp(exponent) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
-
-    # # Define contracted gaussian model
-    # def contracted_gaussian_model(params, x, num_gaussians=1):
-    #     assert len(params) == 7 * num_gaussians
-    #     result = np.zeros(x.shape[0])
-    #     for i in range(num_gaussians):
-    #         c_i, mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z = params[i * 7:(i + 1) * 7]
-    #         result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], x)
-
-    #     return result
-
-    # # Initial guess for parameters
-    # initial_guess = [np.mean(qG_full[:, 0]), np.mean(qG_full[:, 1]), np.mean(qG_full[:, 2]),
-    #                  np.std(qG_full[:, 0]), np.std(qG_full[:, 1]), np.std(qG_full[:, 2])]
-
-    # # Perform the curve fitting
-    # def residuals(params, x, y):
-    #     return gaussian_model(params, x) - y
-
-    # from scipy.optimize import least_squares
-    # result = least_squares(residuals, initial_guess, args=(qG_full, SqG_local_full))
-    # params = result.x
-
     # Fit Gaussian to data
     params = fit_gaussians_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
-                              force_centered=True)
+                              force_centered=force_centered, force_isotropic=force_isotropic)
 
     # Extract sigma values or all parameters
     if return_all_params:
@@ -2945,7 +2955,7 @@ def fourier_integration_3d(reciprocal_vectors,direct_vectors,nks,N_local,r1_h,us
         if use_h:
             # VR = Parallel(n_jobs=-1)(delayed(compute_integrals_h)(k) for k in range(Ggrid_3d.shape[0]))
             print('Computing VR, no. of elements: ', Ggrid_3d.shape[0])
-            tenth_marker = np.min(Ggrid_3d.shape[0] // 10,1)
+            tenth_marker = np.min([Ggrid_3d.shape[0] // 10,1])
             progress = 0
             for k in range(Ggrid_3d.shape[0]):
                 Rvec = Ggrid_3d[k, :]
