@@ -861,10 +861,17 @@ class KRHF(KSCF, pbchf.RHF):
 del (WITH_META_LOWDIN, PRE_ORTH_METHOD)
 
 
-def madelung_modified(cell, kpts, shifted, ew_eta=None):
+def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
     # Here, the only difference from overleaf is that eta here is defined as 4eta^2 = eta_paper
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc.gto.cell import get_Gv_weights
+
+    printstr = "Modified Madelung correction"
+    if anisotropic:
+        printstr += " with anisotropy"
+    print(printstr)
+    # Make ew_eta into array to allow for anisotropy if len==3
+    ew_eta = np.array(ew_eta)
 
     Nk = get_monkhorst_pack_size(cell, kpts)
     import copy
@@ -874,12 +881,11 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None):
     cell_input.unit = 'B' # ecell.verbose = 0
     cell_input.a = a = np.einsum('xi,x->xi', cell.lattice_vectors(), Nk)
 
-
     if ew_eta is None:
         ew_eta, _ = cell_input.get_ewald_params(cell_input.precision, cell_input.mesh)
     chargs = cell_input.atom_charges()
     log_precision = np.log(cell_input.precision / (chargs.sum() * 16 * np.pi ** 2))
-    ke_cutoff = -2 * ew_eta ** 2 * log_precision
+    ke_cutoff = -2 * np.mean(ew_eta) ** 2 * log_precision
     # Get FFT mesh from cutoff value
     mesh = cell_input.cutoff_to_mesh(ke_cutoff)
     # if cell_input.dimension <= 2:
@@ -887,7 +893,7 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None):
     # if cell_input.dimension == 1:
     #     mesh[1] = 1
     # Get grid
-    Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh = mesh)
+    Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh=mesh)
     # Get q+G points
     G_combined = Gv + shifted
     absG2 = np.einsum('gi,gi->g', G_combined, G_combined)
@@ -902,7 +908,15 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None):
         # First term
         sum_term = weights*np.einsum('i->',component).real
         # Second Term
-        sub_term = 2*ew_eta/np.sqrt(np.pi)
+        if anisotropic:
+            assert not isinstance(ew_eta, int)
+            from scipy.integrate import tplquad
+            def integrand(x, y, z):
+                qG = np.array([x, y, z])
+                return 4 * np.pi / np.dot(qG, qG) * np.exp(-np.dot(qG, qG) / (4 * ew_eta ** 2))
+            subterm = tplquad(integrand, -np.inf, np.inf, -np.inf, np.inf, -np.inf, np.inf)[0]
+        else:
+            sub_term = 2*np.mean(ew_eta)/np.sqrt(np.pi)
         ewovrl = 0.0
         ewself_2 = 0.0
         print("Ewald components = %.15g, %.15g, %.15g,%.15g" % (ewovrl/2, sub_term/2,ewself_2/2, sum_term/2))
@@ -1586,16 +1600,18 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
     # Initial guess for parameters
     # initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0,
     #                  np.std(xyz_input[:, 0]), np.std(xyz_input[:, 1]), np.std(xyz_input[:, 2])] * num_gaussians
+    
+    
     if force_centered:
         if force_isotropic:
-            initial_guess = [nocc/num_gaussians, 1.5] * num_gaussians
+            initial_guess = [1./num_gaussians, 1.5] * num_gaussians
             num_gauss_params = 2
             offset = 0
 
             sigma_indices = [1]
         else:
 
-            initial_guess = [nocc/num_gaussians, 1.5, 1.5, 1.5] * num_gaussians
+            initial_guess = [1./num_gaussians, 1.5, 1.5, 1.5] * num_gaussians
             num_gauss_params = 4
             offset = 0
 
@@ -1608,7 +1624,7 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
                                                        isotropic=force_isotropic)
             return np.sum((f_fit - f)**2)
     else:
-        initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0, 1.5, 1.5, 1.5] * num_gaussians
+        initial_guess = [1./num_gaussians, 0.0, 0.0, 0.0, 1.5, 1.5, 1.5] * num_gaussians
         num_gauss_params = 7
         offset = 3
         sigma_indices = [4, 5, 6]
@@ -1621,7 +1637,7 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
 
     # Constraint where all c_i must be positive and sum to 1
     def normalization(params):
-        return np.sum(params[::num_gauss_params]) - nocc
+        return np.sum(params[::num_gauss_params]) - 1
 
     constraints = [
         {'type': 'eq', 'fun': normalization},
@@ -1652,9 +1668,11 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
     bounds = single_bound * num_gaussians
 
     from scipy.optimize import least_squares,minimize
-    result = minimize(residuals, initial_guess, args=(xyz_input, f_input), constraints=constraints,bounds=bounds)
-    # result = least_squares(residuals, initial_guess, args=(xyz, f))
+    result = minimize(residuals, initial_guess, args=(xyz_input, f_input/nocc), constraints=constraints,bounds=bounds)
     params = result.x
+
+    # Renormalize the c_i values
+    params[::num_gauss_params] *= nocc
 
     # Print parameters for each gaussian
     if force_centered:
@@ -2207,16 +2225,21 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
             elif num_gauss_params == 2:
                 c_i, sigma = subtract_nocc_gauss_params[i*num_gauss_params:(i+1)*num_gauss_params]
                 sigma_x = sigma_y = sigma_z = sigma
-            # ew_eta_i = 1./2. * np.mean([sigma_x, sigma_y, sigma_z])**(-1/2) # TODO: Implement anisotropy
-            ew_eta_i = 1./np.sqrt(2.) * np.mean([sigma_x, sigma_y, sigma_z])# TODO: Implement anisotropy
 
+            # Detect anisotropy
+            if np.abs(sigma_x - sigma_y) < 1e-8 and np.abs(sigma_y - sigma_z) < 1e-8:
+                ew_eta_i = 1./np.sqrt(2.) * np.mean([sigma_x, sigma_y, sigma_z])# TODO: Implement anisotropy
+                anisotropic = False
+            else:
+                ew_eta_i = 1./np.sqrt(2.) * np.array([sigma_x, sigma_y, sigma_z])
+                aniostropic = True
             # ew_eta = 20
             # ew_eta = 0.219935106676302
             chi_i = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta_i)
             chi = chi + c_i * chi_i
             print("Term ", i)
             print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
-            print(f" Input ew_eta: {ew_eta_i:.12f}")
+            print(f" Input ew_eta:     {ew_eta_i:.12f}")
             print(f" Coefficient:      {c_i:.12f}")
             print(f" Chi:              {chi_i:.12f}")
             print(f" Contribution:     {c_i * chi_i:.12f}")

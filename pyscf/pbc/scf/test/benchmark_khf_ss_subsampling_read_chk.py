@@ -186,7 +186,7 @@ P   0.0000000   1.9799090   5.0557003
 wrap_around = True
 nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_Si_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56,wrap_around=wrap_around)
 cell.dimension = 3
 cell.build()
 Nk = np.prod(kmesh)
@@ -196,14 +196,14 @@ print('Kmesh:', kmesh)
 
 # Read scf Result
 from pyscf.lib import chkfile
-chkfile_result =chkfile.load('Si-kmf-nk222.chk','scf')
+chkfile_result =chkfile.load('phosphorous-kmf-nk222.chk','scf')
 mf = khf.KRHF(cell, exxdiv='ewald')
 mf.__dict__.update(chkfile_result)
 
 # Load GDF's CDERIs
 df_type = df.GDF
 df = df_type(cell, kpts)
-df._cderi = 'Si-df-nk222.h5'
+df._cderi = 'phosphorous-df-nk222.h5'
 df._cderi_to_save = None
 mf.with_df = df.build()
 
@@ -249,12 +249,13 @@ mf.exxdiv = None  #so that standard energy is computed without madelung
 
 
 from pyscf.pbc.scf.khf import compute_SqG_anisotropy,contracted_gaussian_model,contracted_gaussian_model_centered
-num_gaussians = 3
+num_gaussians = 2
 
 force_centered = True
-force_isotropic = True
-params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[11,11,11],dm_kpts=dm_kpts,
+force_isotropic = False
+params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[20,20,20],dm_kpts=dm_kpts,
                                 mo_coeff_kpts=mf.mo_coeff_kpts,num_gaussians=num_gaussians,
+                                SqG_filename='phosphorous_SqG_nk222.npy',
                                 return_all_params=True,force_centered=force_centered,force_isotropic=force_isotropic)
 
 # save params to npy
