@@ -249,10 +249,10 @@ mf.exxdiv = None  #so that standard energy is computed without madelung
 
 
 from pyscf.pbc.scf.khf import compute_SqG_anisotropy,contracted_gaussian_model,contracted_gaussian_model_centered
-num_gaussians = 2
+num_gaussians = 3
 
 force_centered = True
-force_isotropic = False
+force_isotropic = True
 params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[20,20,20],dm_kpts=dm_kpts,
                                 mo_coeff_kpts=mf.mo_coeff_kpts,num_gaussians=num_gaussians,
                                 SqG_filename='phosphorous_SqG_nk222.npy',
@@ -278,7 +278,7 @@ ss_params = {
     'n_fft': 350,
     # 'M':ss_input['M'],
     'vhR_symm': False,
-    # 'SqG_filenames':['phosphorous_SqG_nk222.npy',None],
+    'SqG_filenames':['phosphorous_SqG_nk222.npy',None],
     # 'SqG_filenames':[None,None],
     'H_use_unscaled': False,
     'delta':0.2,

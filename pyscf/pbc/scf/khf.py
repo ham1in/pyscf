@@ -869,6 +869,9 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
     printstr = "Modified Madelung correction"
     if anisotropic:
         printstr += " with anisotropy"
+        assert not isinstance(ew_eta, int)
+        raise NotImplementedError("Anisotropic Madelung correction not correctly implemented yet")
+
     print(printstr)
     # Make ew_eta into array to allow for anisotropy if len==3
     ew_eta = np.array(ew_eta)
@@ -888,10 +891,7 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
     ke_cutoff = -2 * np.mean(ew_eta) ** 2 * log_precision
     # Get FFT mesh from cutoff value
     mesh = cell_input.cutoff_to_mesh(ke_cutoff)
-    # if cell_input.dimension <= 2:
-    #     mesh[2] = 1
-    # if cell_input.dimension == 1:
-    #     mesh[1] = 1
+    
     # Get grid
     Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh=mesh)
     # Get q+G points
@@ -901,20 +901,70 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
     if cell_input.dimension ==3:
         # Calculate |q+G|^2 values of the shifted points
         qG2 = np.einsum('gi,gi->g', G_combined, G_combined)
-        # Note: Stephen - remove those points where q+G = 0
-        qG2[qG2 == 0] = 1e200
-        # Now putting the ingredients together
-        component = 4 * np.pi / qG2 * np.exp(-qG2 / (4 * ew_eta ** 2))
+        if anisotropic:
+            denom = -1 / (4 * ew_eta ** 2)
+            exponent = np.einsum('gi,gi,i->g', G_combined, G_combined, denom)
+            exponent[exponent == 0] = -1e200
+            component = 4 * np.pi / qG2 * np.exp(exponent)
+        else:
+            qG2[qG2 == 0] = 1e200
+            component = 4 * np.pi / qG2 * np.exp(-qG2 / (4 * ew_eta ** 2))
+
         # First term
         sum_term = weights*np.einsum('i->',component).real
         # Second Term
         if anisotropic:
-            assert not isinstance(ew_eta, int)
-            from scipy.integrate import tplquad
+            from scipy.integrate import tplquad, nquad
+            from cubature import cubature
+            denom = -1 / (4 * ew_eta ** 2)
+
+            # i denotes coordinate, g denotes vector number 
             def integrand(x, y, z):
                 qG = np.array([x, y, z])
-                return 4 * np.pi / np.dot(qG, qG) * np.exp(-np.dot(qG, qG) / (4 * ew_eta ** 2))
-            subterm = tplquad(integrand, -np.inf, np.inf, -np.inf, np.inf, -np.inf, np.inf)[0]
+                denom = -1 / (4 * ew_eta ** 2)
+                exponent = np.einsum('i,i,i->', qG, qG, denom)
+                qG2 = np.einsum('i,i->', qG, qG)
+                out = 4 * np.pi / qG2 * np.exp(exponent)
+                
+                # Handle special case when x, y, and z are very small
+                if np.isscalar(out):
+                    if (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12):
+                        out = 0
+                else:
+                    mask = (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12)
+                    out[mask] = 0  # gaussian case
+                return out
+            
+            def integrand_vectorized(x,y,z):
+                qG = np.array([x, y, z])
+                denom = -1 / (4 * ew_eta ** 2)
+                exponent = np.einsum('ig,ig,i->g', qG, qG, denom)
+                qG2 = np.einsum('ig,ig->g', qG, qG)
+                out = 4 * np.pi / qG2 * np.exp(exponent)
+
+                # Handle special case when x, y, and z are very small
+                if np.isscalar(out):
+                    if (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12):
+                        out = 0
+                else:
+                    mask = (np.abs(x) < 1e-12) & (np.abs(y) < 1e-12) & (np.abs(z) < 1e-12)
+                    out[mask] = 0  # gaussian case
+
+                return out
+
+            x_min, x_max = -10,10
+            y_min, y_max = -10,10
+            z_min, z_max = -10,10
+            global_tol = 1e-5
+            integral_cart_imag = cubature(lambda xall: integrand_vectorized(xall[:,0], xall[:,1], xall[:,2]), 3, 1,
+                                          [x_min, y_min, z_min], [x_max, y_max, z_max],relerr=global_tol,
+                                          abserr=global_tol, vectorized=False)[0][0]
+            # integral_cart_imag = cubature(lambda xall: integrand_vectorized(xall[:,0], xall[:,1], xall[:,2]), 3, 1,
+            #                     [x_min, y_min, z_min], [x_max, y_max, z_max],relerr=global_tol,
+            #                     abserr=global_tol, vectorized=False)[0][0]
+            # subterm =(2*np.pi)**(-3) * tplquad(integrand, -np.inf, np.inf, -np.inf, np.inf, -np.inf, np.inf)[0]
+            # subterm =(2*np.pi)**(-3) * nquad(integrand, [[-np.inf, np.inf], [-np.inf, np.inf], [-np.inf, np.inf]],points=[[0,0,0]])[0]
+            # nquad(integrand, [[-10, 10], [-10, 10], [-10, 10]],opts={'points':[0,0,0]})
         else:
             sub_term = 2*np.mean(ew_eta)/np.sqrt(np.pi)
         ewovrl = 0.0
@@ -1183,7 +1233,7 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
         else:
             dm_un = dm_kpts
 
-        #Defining size and making shifted mesh
+        #  Defining size and making shifted mesh
         nks = get_monkhorst_pack_size(mf2.cell, mf2.kpts)
         shift = mf2.cell.get_abs_kpts([kshift_rel/n for n in nks])
         if icell.dimension <=2:
@@ -2227,18 +2277,21 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
                 sigma_x = sigma_y = sigma_z = sigma
 
             # Detect anisotropy
+            anisotropic = False
             if np.abs(sigma_x - sigma_y) < 1e-8 and np.abs(sigma_y - sigma_z) < 1e-8:
                 ew_eta_i = 1./np.sqrt(2.) * np.mean([sigma_x, sigma_y, sigma_z])# TODO: Implement anisotropy
-                anisotropic = False
             else:
                 ew_eta_i = 1./np.sqrt(2.) * np.array([sigma_x, sigma_y, sigma_z])
-                aniostropic = True
+                anisotropic = True
             # ew_eta = 20
             # ew_eta = 0.219935106676302
-            chi_i = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta_i)
+            chi_i = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta_i,anisotropic=anisotropic)
             chi = chi + c_i * chi_i
             print("Term ", i)
-            print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
+            if anisotropic:
+                print(f" Input  sigma x = {sigma_x:.12f}, sigma y = {sigma_y:.12f}, sigma z = {sigma_z:.12f}")
+            else:
+                print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
             print(f" Input ew_eta:     {ew_eta_i:.12f}")
             print(f" Coefficient:      {c_i:.12f}")
             print(f" Chi:              {chi_i:.12f}")
