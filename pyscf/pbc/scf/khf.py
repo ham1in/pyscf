@@ -1663,7 +1663,7 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
     
     if force_centered:
         if force_isotropic:
-            initial_guess = [1./num_gaussians, 1.5] * num_gaussians
+            initial_guess = [1./num_gaussians, 0.75] * num_gaussians
             num_gauss_params = 2
             offset = 0
 
