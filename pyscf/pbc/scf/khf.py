@@ -1226,6 +1226,8 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
     else: # Non-SCF
         mf2 = scf.KHF(icell,ikpts, exxdiv='ewald')
         mf2.with_df = df_type(icell, ikpts).build()
+        nocc = mf2.cell.tot_electrons()//2
+
         if dm_kpts is None:
             print(mf2.kernel())
             # Get converged density matrix
@@ -1299,22 +1301,22 @@ def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_
                     anisotropic = True
                 # ew_eta = 20
                 # ew_eta = 0.219935106676302
-                chi_i = madelung_modified(cell, ikpts, shifted, ew_eta=ew_eta_i,anisotropic=anisotropic)
+                chi_i = madelung_modified(icell, ikpts, shifted, ew_eta=ew_eta_i,anisotropic=anisotropic)
                 chi = chi + c_i * chi_i
                 print("Term ", i)
                 if anisotropic:
                     print(f" Input  sigma x = {sigma_x:.12f}, sigma y = {sigma_y:.12f}, sigma z = {sigma_z:.12f}")
                 else:
                     print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
-                
+
                 print(f" Input ew_eta:     {ew_eta_i:.12f}")
                 print(f" Coefficient:      {c_i:.12f}")
                 print(f" Chi:              {chi_i:.12f}")
                 print(f" Contribution:     {c_i * chi_i:.12f}")
-            
+
             nocc = mf2.cell.tot_electrons()//2
             E_stagger_M = E_stagger + chi
-            
+
         else:
             count_iter = 1
             ecell = set_cell(mf2)
