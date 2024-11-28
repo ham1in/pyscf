@@ -3,12 +3,8 @@ from pyscf.pbc.tools import pbc as pbc_tools
 from pyscf.lib import logger
 import copy
 
-
-# def subsample_kpts(mf, dim, div_vector, dm_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-#                    wrap_around=False, ss_nlocal=7, ss_localizer=None, ss_debug=False,ss_r1_prefactor=1.0,
-#                    ss_subtract_nocc=False,ss_use_sqG_anisotropy=False,ss_nufft_gl=False,ss_n_fft=400):
 def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_routine="standard", df_type=None, exxdiv='ewald',
-                   wrap_around=False, sanity_run=False, with_gamma_point=True, ss_params={}):
+                   wrap_around=False, sanity_run=False, with_gamma_point=True, ss_params={}, modified_madelung_params={}):
     """
 
     Args:
@@ -103,6 +99,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     ]
     khf_routines_all = [
         "standard",
+        "modified_probe",
     ]
 
     khf_routines_all.extend(khf_routines_ss)
@@ -119,7 +116,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
     # if ss_params:
     # assert(ss_params)
     # Unpack params for SS if they exist
-    ss_localizer = ss_params['localizer']
+    ss_localizer = ss_params.get('localizer', None)
     ss_localizer_M = lambda q, r1: ss_localizer(q, r1, M)
     ss_nlocal = ss_params.get('nlocal', 3)
     ss_r1_prefactor = ss_params.get('r1_prefactor', 1.0)
@@ -269,11 +266,18 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             stagger_type = stagger_routine_to_type[khf_routine]
             fourinterp = (khf_routine == "stagger_nonscf_fourier")
             khf_stagger_results = khf_stagger(icell=mf.cell, ikpts=kpts_div, version=stagger_type,
-                                                                df_type=df_type, dm_kpts=dm_kpts,
-                                                                mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp,ss_params=ss_params)
+                                              df_type=df_type, dm_kpts=dm_kpts,
+                                              mo_coeff_kpts=mo_coeff_kpts, fourinterp=fourinterp,ss_params=ss_params,
+                                              modified_madelung_params=modified_madelung_params)
 
+            # _, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
+            # Ek_madelung = -1. / nk_div * np.einsum('kij,kji', dm_kpts, K) * 0.5
+            # Ek_madelung /= 2.
+
+            # Ek_madelung = Ek_madelung.real
+            
             Ek_stagger_M = khf_stagger_results['E_stagger_M']
-            Ek_madelung = khf_stagger_results['E_madelung']
+            # Ek_madelung = Ek
             int_term = khf_stagger_results['int_term']
             quad_term = khf_stagger_results['quad_term']
             Ek_stagger_ss = khf_stagger_results['E_stagger_ss']
@@ -281,14 +285,43 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             print('Ek (a.u.) = ', Ek_stagger_M, file=f)
             results["Ek_ss_list"].append(Ek_stagger_ss)
             results["Ek_stagger_list"].append(Ek_stagger_M)
-            results["Ek_list"].append(Ek_madelung)
+            # results["Ek_list"].append(Ek_madelung)
             results["nk_list"].append(nk_div)
             results["nks_list"].append(copy.copy(nks))
             results["int_terms"].append(int_term)
             results["quad_terms"].append(quad_term)
 
-        else: # standard exchange
+        elif khf_routine == "modified_probe":
+            from pyscf.pbc.scf.khf import madelung_modified
+            from pyscf.pbc.tools import madelung
+            mf.exxdiv = None  #so that standard energy is computed without madelung
+            J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts_div, kpts_band=kpts_div, with_j=False,exxdiv=None)
+            mf.exxdiv = 'ewald'
+            Ek_uncorr = -1. / nk_div * np.einsum('kij,kji', dm_kpts, K) * 0.5
+            Ek_uncorr /= 2.
+            Ek_uncorr = Ek_uncorr.real
 
+
+            chi_regular = madelung(mf.cell, kpts_div)
+            Ek_regular = Ek_uncorr - nocc * chi_regular
+
+            shift = np.array([0.,0.,0.])
+            params = modified_madelung_params['gauss_params']
+            assert len(params) == 2, "Two parameters required for modified madelung"
+            c_i, sigma = params
+            assert c_i == nocc, "c_i must be equal to nocc"
+            ew_eta = 1./np.sqrt(2.) * sigma
+
+            chi = madelung_modified(mf.cell, kpts_div, shift, ew_eta=ew_eta, anisotropic=False)
+            Ek = Ek_uncorr + nocc * chi # no need to multiply by nocc for this case.
+
+            print('Ek (a.u.) = ', Ek, file=f)
+            results["Ek_list"].append(Ek_regular)
+            results["Ek_uncorr_list"].append(Ek_uncorr)
+            results["nk_list"].append(nk_div)
+            results["nks_list"].append(copy.copy(nks))
+            results["Ek_modified_list"].append(Ek)
+        else: # standard exchange
             J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts_div, kpts_band=kpts_div, with_j=True)
             Ek = -1. / nk_div * np.einsum('kij,kji', dm_kpts, K) * 0.5
             Ek /= 2.

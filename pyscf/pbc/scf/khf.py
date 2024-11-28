@@ -1014,6 +1014,7 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         ewg *= inv_area # * 0.5
 
         ewg_analytical = 2 * ew_eta / np.sqrt(np.pi)
+        
         return ewg - ewg_analytical
 
 
@@ -2292,6 +2293,9 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
             else:
                 ew_eta_i = 1./np.sqrt(2.) * np.array([sigma_x, sigma_y, sigma_z])
                 anisotropic = True
+                
+                
+
             # ew_eta = 20
             # ew_eta = 0.219935106676302
             chi_i = madelung_modified(cell, kpts, shifted, ew_eta=ew_eta_i,anisotropic=anisotropic)
