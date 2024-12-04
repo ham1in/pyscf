@@ -1627,19 +1627,26 @@ def contracted_gaussian_model(params, xyz, num_gaussians=1):
         result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], xyz)
 
     return result
-def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=False):
+def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=False,with_coul=False):
     # Define Gaussian model function
     # xyz in shape (n, 3)
     num_gauss_params = 4 # per gaussian
     if isotropic:
         num_gauss_params -= 2
-
-    def gaussian_model(params, xyz):
-        sigma_x, sigma_y, sigma_z = params
-        exponent = -((xyz[:, 0]) ** 2 / (2 * sigma_x ** 2) +
-                     (xyz[:, 1]) ** 2 / (2 * sigma_y ** 2) +
-                     (xyz[:, 2]) ** 2 / (2 * sigma_z ** 2))
-        return np.exp(exponent) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
+    if with_coul:
+        def gaussian_model(params, xyz):
+            sigma_x, sigma_y, sigma_z = params
+            exponent = -((xyz[:, 0]) ** 2 / (2 * sigma_x ** 2) +
+                        (xyz[:, 1]) ** 2 / (2 * sigma_y ** 2) +
+                        (xyz[:, 2]) ** 2 / (2 * sigma_z ** 2))
+            return np.exp(exponent)/ (np.sum(xyz**2,axis=1)) # if not subtract_nocc else -nocc + nocc * np.exp(exponent)
+    else:
+        def gaussian_model(params, xyz):
+            sigma_x, sigma_y, sigma_z = params
+            exponent = -((xyz[:, 0]) ** 2 / (2 * sigma_x ** 2) +
+                        (xyz[:, 1]) ** 2 / (2 * sigma_y ** 2) +
+                        (xyz[:, 2]) ** 2 / (2 * sigma_z ** 2))
+            return np.exp(exponent)
 
     assert len(params) == num_gauss_params * num_gaussians
     result = np.zeros(xyz.shape[0])
@@ -1654,8 +1661,8 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=Fa
 
     return result
 
-def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropic=False,
-                     force_centered=False):
+def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropic=False,
+                     force_centered=False, with_coul=False):
 
     # Initial guess for parameters
     # initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0,
@@ -1677,12 +1684,11 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
 
             sigma_indices = [1, 2, 3]
 
-        def residuals(params, xyz, f):
-            # return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
-            # Least squares
+        def residuals(params, xyz, f, pow=2):
             f_fit = contracted_gaussian_model_centered(params, xyz, num_gaussians=num_gaussians,
-                                                       isotropic=force_isotropic)
-            return np.sum((f_fit - f)**2)
+                                                    isotropic=force_isotropic, with_coul=with_coul)
+            return np.sum(np.abs(f_fit - f)**pow)
+
     else:
         initial_guess = [1./num_gaussians, 0.0, 0.0, 0.0, 1.5, 1.5, 1.5] * num_gaussians
         num_gauss_params = 7
@@ -1703,23 +1709,6 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
         {'type': 'eq', 'fun': normalization},
     ]
 
-    # for i in range(num_gaussians):
-    #     # Enforce non-negative sigmas
-    #     # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+4]})
-    #     # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+5]})
-    #     # constraints.append({'type': 'ineq', 'fun': lambda params: params[i*7+6]})
-
-    #     if force_isotropic:
-    #         constraints.append(
-    #             {'type': 'eq',
-    #              'fun': lambda params: params[i*num_gauss_params+offset+1] - params[i*num_gauss_params+offset+2]})
-    #         constraints.append(
-    #             {'type': 'eq',
-    #              'fun': lambda params: params[i*num_gauss_params+offset+2] - params[i*num_gauss_params+offset+3]})
-    #     #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+1]})
-    #     #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+2]})
-    #     #     constraints.append({'type': 'eq', 'fun': lambda params: params[i*7+3]})
-  
     # Force positive c and sigma values
     single_bound = [(None, None)] * num_gauss_params
     single_bound[0] = (0.0,None)
@@ -1766,7 +1755,7 @@ def fit_gaussians_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussian
 
 def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None,
                            SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True, 
-                           force_isotropic=False):
+                           force_isotropic=False, fit_with_coul=False):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1872,11 +1861,18 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
         start_idx = iq * N_local_3D
         end_idx = (iq + 1) * N_local_3D
         qG_full[start_idx:end_idx, :] = qG
-        SqG_local_full[start_idx:end_idx] = SqG[iq, :]
-
+        if fit_with_coul:
+            SqG_local_full[start_idx:end_idx] = SqG[iq, :]/np.sum(qG**2,axis=1)
+        else:
+            SqG_local_full[start_idx:end_idx] = SqG[iq, :]
+            
+    # Remove inf and nan values
+    qG_full = qG_full[~np.isinf(SqG_local_full)]
+    SqG_local_full = SqG_local_full[~np.isinf(SqG_local_full)]
+    
     # Fit Gaussian to data
-    params = fit_gaussians_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
-                              force_centered=force_centered, force_isotropic=force_isotropic)
+    params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
+                              force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul)
 
     # Extract sigma values or all parameters
     if return_all_params:

@@ -84,7 +84,7 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
     cell.a = '''
          0.0 3.370326545430162 3.370326545430162
          3.370326545430162 0.0 3.370326545430162
-         3.370326545430162 3.370326545430162 0.0
+         3.370326545430162 3.370326545430162 0.0  
         '''
     cell.verbose = 7
     cell.spin = 0
@@ -140,7 +140,7 @@ P   3.1137830   8.3475148   3.5305260
 P   0.0000000   1.9799090   5.0557003
         '''
 
-
+              
     cell.a = '''
 6.227566008270  0.000000000000  0.000000000000
 0.000000000000  20.654847635604 0.000000000000
@@ -160,101 +160,9 @@ P   0.0000000   1.9799090   5.0557003
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
 
-def build_SnS_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom='''
-Sn  1.8693430   3.1653933   13.3823814
-Sn  5.6080291   5.4003768   8.1454120
-Sn  5.6080291   7.4482784   18.9093087
-Sn  1.8693430   1.1174917   2.6184847
-S   1.8693430   0.0907698   7.4808535
-S   5.6080291   8.4750004   14.0469399
-S   5.6080291   4.3736548   3.2830432
-S   1.8693430   4.1921153   18.2447503
-        '''
-
-              
-    cell.a = '''
-7.477372123464  0.000000000000  0.000000000000
-0.000000000000  8.565770162297  0.000000000000
-0.000000000000  0.000000000000  21.527793440959
-        '''
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    #cell.ke_cutoff = 55.13
-    cell.ke_cutoff = kecut
-    cell.max_memory = 240000
-    cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
-    return cell, kpts
-
-def build_SnTe_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom='''
-Sn  0.00000000000   0.00000000000   0.00000000000
-Te  6.02031374618   6.02031374618   6.02031374618
-        '''
-
-              
-    cell.a = '''
-0.00000000000   6.02031374618   6.02031374618
-6.02031374618   0.00000000000   6.02031374618
-6.02031374618   6.02031374618   0.00000000000
-
-        '''
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    #cell.ke_cutoff = 55.13
-    cell.ke_cutoff = kecut
-    cell.max_memory = 240000
-    cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
-    return cell, kpts
-
-def build_Si_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True):
-    cell = pbcgto.Cell()
-    cell.unit = 'Bohr'
-    cell.atom='''
-Si  0.00000000000   0.00000000000   0.00000000000
-Si  2.57177646209   2.57177646209   2.57177646209
-        '''
-
-              
-    cell.a = '''
-0.00000000000   5.14355292417   5.14355292417
-5.14355292417   0.00000000000   5.14355292417
-5.14355292417   5.14355292417   0.00000000000
-        '''
-
-    cell.verbose = 7
-    cell.spin = 0
-    cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
-    cell.pseudo = 'gth-pbe'
-    cell.precision = 1e-8
-    #cell.ke_cutoff = 55.13
-    cell.ke_cutoff = kecut
-    cell.max_memory = 240000
-    cell.build()
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
-    return cell, kpts
-
-
-nkx = 1
+nkx = 2
 kmesh = [nkx, nkx, nkx]
-cell, kpts= build_Si_cell(nk=kmesh,kecut=56)
+cell, kpts= build_phosphorous_cell(nk=kmesh,kecut=56)
 cell.dimension = 3
 cell.build()
 
@@ -293,25 +201,22 @@ print('Ecoul (a.u.) is ', Ek + Ej)
 # Subsample 8 kpts
 
 
-div_vector = [1]
+div_vector = [1,2]
 
 
 from pyscf.pbc.scf.khf import compute_SqG_anisotropy,contracted_gaussian_model,contracted_gaussian_model_centered
-num_gaussians = 1
+num_gaussians = 2
+
 force_centered = True
 force_isotropic = True
-fit_with_coul = True
-params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=mf.cell.mesh,dm_kpts=dm_kpts,
+params = compute_SqG_anisotropy(cell=mf.cell,nks=kmesh, N_local=[9,9,9],dm_kpts=dm_kpts,
                                 mo_coeff_kpts=mf.mo_coeff_kpts,num_gaussians=num_gaussians,
                                 # SqG_filename='phosphorous_SqG_nk222.npy',
-                                return_all_params=True,force_centered=force_centered,force_isotropic=force_isotropic,
-                                fit_with_coul=fit_with_coul)
+                                return_all_params=True,force_centered=force_centered,force_isotropic=force_isotropic)
 
 modified_madelung_params = {
     'gauss_params':params,
     'num_gaussians':num_gaussians,
 }
-results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="modified_probe",df_type=df_type,
+results = subsample_kpts(mf=mf,dim=3,div_vector=div_vector,khf_routine="stagger_nonscf",df_type=df_type,
                          modified_madelung_params=modified_madelung_params)
-
-
