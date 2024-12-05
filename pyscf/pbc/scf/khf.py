@@ -970,7 +970,7 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         ewovrl = 0.0
         ewself_2 = 0.0
         print("Ewald components = %.15g, %.15g, %.15g,%.15g" % (ewovrl/2, sub_term/2,ewself_2/2, sum_term/2))
-        return sum_term - sub_term
+        return sub_term - sum_term
 
     elif cell_input.dimension == 2:  # Truncated Coulomb
         from scipy.special import erfc, erf
@@ -1017,6 +1017,70 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         
         return ewg - ewg_analytical
 
+
+def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, sigma_multiplier=1.0):
+    from pyscf.pbc.scf.khf import madelung_modified
+    from pyscf.pbc.tools import madelung
+    import time
+    print("SS-NG Correction for Exact Exchange with sigma_multiplier = %.2f" % sigma_multiplier)
+    dm_kpts = mf.make_rdm1()
+    nocc = mf.cell.nelectron // 2
+    kpts = mf.kpts
+    nk = np.prod(nks)
+    if N_local is None:
+        N_local = mf.cell.mesh
+        
+    if force_isotropic:
+        num_gaussian_params = 2
+    else:
+        num_gaussian_params = 4
+    
+    # Fit Gaussian to Structure Factor
+    print('Fitting gaussian parameters... ')
+    fit_start = time.time()
+    params = compute_SqG_anisotropy(cell=mf.cell, nks=nks, N_local=N_local, dm_kpts=dm_kpts,
+                                    mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
+                                    return_all_params=True, force_centered=force_centered,
+                                    force_isotropic=force_isotropic, fit_with_coul=fit_with_coul)
+    fit_end = time.time()
+    params[1::num_gaussian_params] *= sigma_multiplier
+
+    print('Fitting done in %.2f seconds' % (fit_end - fit_start))
+    print('Fitting parameters: ', params)
+    
+    # Compute Exchange Energies
+    mf.exxdiv = None  # so that standard energy is computed without madelung
+    J, K = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=kpts, kpts_band=kpts, with_j=False, exxdiv=None)
+    mf.exxdiv = 'ewald'
+    
+    Ek_uncorr = -1. / nk * np.einsum('kij,kji', dm_kpts, K) * 0.5
+    Ek_uncorr /= 2.
+    Ek_uncorr = Ek_uncorr.real
+
+    chi_regular = madelung(mf.cell, kpts)
+    Ek_regular = Ek_uncorr - nocc * chi_regular
+
+    # Compute SS-NG exchange energy
+    shift = np.array([0., 0., 0.])
+    assert len(params) == 2, "Two parameters required for modified madelung"
+    c_i, sigma = params
+    assert c_i == nocc, "c_i must be equal to nocc"
+    ew_eta = 1. / np.sqrt(2.) * sigma
+
+    chi = madelung_modified(mf.cell, kpts, shift, ew_eta=ew_eta, anisotropic=False)
+    Ek = Ek_uncorr - nocc * chi  # no need to multiply by nocc for this case.
+    
+    results = {
+        'Ek_uncorr': Ek_uncorr,
+        'Ek_probe': Ek_regular,
+        'Ek_ss_ng': Ek,
+    }
+    print('khf_ss_ng results:')
+    print(' Ek_uncorr = %.15g' % Ek_uncorr)
+    print(' Ek_probe = %.15g' % Ek_regular)
+    print(' Ek_ss_ng = %.15g' % Ek)
+   
+    return results
 
 def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_coeff_kpts=None, 
                 kshift_rel=0.5, fourinterp=False, ss_params={}, modified_madelung_params={}):
