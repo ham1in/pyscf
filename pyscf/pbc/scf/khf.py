@@ -29,7 +29,6 @@ import sys
 
 from functools import reduce
 import numpy as np
-import pymp.shared
 import scipy.linalg
 import h5py
 from pyscf.pbc.scf import hf as pbchf
@@ -1016,7 +1015,6 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         ewg_analytical = 2 * ew_eta / np.sqrt(np.pi)
         
         return ewg - ewg_analytical
-
 
 def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, sigma_multiplier=1.0):
     from pyscf.pbc.scf.khf import madelung_modified
