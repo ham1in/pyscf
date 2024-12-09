@@ -30,7 +30,7 @@ from pyscf.pbc.scf.khf import khf_ssng
 import os
 
 cwd = os.getcwd()
-nthreads = 16
+nthreads = 4
 os.environ['OMP_NUM_THREADS'] = str(nthreads)
 os.environ['MKL_NUM_THREADS'] = str(nthreads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(nthreads)
@@ -242,7 +242,7 @@ Si  2.57177646209   2.57177646209   2.57177646209
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
-    cell.basis = 'gth-szv-molopt-sr'
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pbe'
     cell.precision = 1e-8
     #cell.ke_cutoff = 55.13
@@ -253,9 +253,9 @@ Si  2.57177646209   2.57177646209   2.57177646209
     return cell, kpts
 
 
-nkx = 2
+nkx = 1
 nks = [nkx, nkx, nkx]
-cell, kpts= build_Si_cell(nk=nks,kecut=56)
+cell, kpts= build_SnS_cell(nk=nks,kecut=56)
 cell.dimension = 3
 cell.build()
 
@@ -270,11 +270,11 @@ mf.exxdiv = 'ewald'
 e1 = mf.kernel()
 
 
-num_gaussians = 1
+num_gaussians = 4
 force_centered = True
 force_isotropic = True
 fit_with_coul = True
-sigma_multiplier = 0.7
+sigma_multiplier = 0.8
 
 N_local = [9,9,9]
 results = khf_ssng(mf, nks, num_gaussians=num_gaussians, force_centered=force_centered, force_isotropic=force_isotropic, 

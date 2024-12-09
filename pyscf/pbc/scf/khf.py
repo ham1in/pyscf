@@ -1059,20 +1059,54 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
     Ek_regular = Ek_uncorr - nocc * chi_regular
 
     # Compute SS-NG exchange energy
-    shift = np.array([0., 0., 0.])
-    assert len(params) == 2, "Two parameters required for modified madelung"
-    c_i, sigma = params
-    assert c_i == nocc, "c_i must be equal to nocc"
-    ew_eta = 1. / np.sqrt(2.) * sigma
+    if num_gaussians == 1:
+        shift = np.array([0., 0., 0.])
+        assert len(params) == 2, "Two parameters required for modified madelung"
+        c_i, sigma = params
+        assert c_i == nocc, "c_i must be equal to nocc"
+        ew_eta = 1. / np.sqrt(2.) * sigma
 
-    chi = madelung_modified(mf.cell, kpts, shift, ew_eta=ew_eta, anisotropic=False)
-    Ek = Ek_uncorr - nocc * chi  # no need to multiply by nocc for this case.
-    
+        chi = madelung_modified(mf.cell, kpts, shift, ew_eta=ew_eta, anisotropic=False)
+        Ek = Ek_uncorr - nocc * chi  
+    else:
+        shifted = np.array([0,0,0])
+        num_gauss_params = 2
+        chi = 0
+        for i in range(num_gaussians):
+            if num_gauss_params == 4:
+                c_i, sigma_x, sigma_y, sigma_z = params[i*num_gauss_params:(i+1)*num_gauss_params]
+            elif num_gauss_params == 2:
+                c_i, sigma = params[i*num_gauss_params:(i+1)*num_gauss_params]
+                sigma_x = sigma_y = sigma_z = sigma
+
+            # Detect anisotropy
+            anisotropic = False
+            if np.abs(sigma_x - sigma_y) < 1e-8 and np.abs(sigma_y - sigma_z) < 1e-8:
+                ew_eta_i = 1./np.sqrt(2.) * np.mean([sigma_x, sigma_y, sigma_z])# TODO: Implement anisotropy
+            else:
+                ew_eta_i = 1./np.sqrt(2.) * np.array([sigma_x, sigma_y, sigma_z])
+                anisotropic = True
+                
+
+            chi_i = madelung_modified(mf.cell, kpts, shifted, ew_eta=ew_eta_i,anisotropic=anisotropic)
+            chi = chi + c_i * chi_i
+            print("Term ", i)
+            if anisotropic:
+                print(f" Input  sigma x = {sigma_x:.12f}, sigma y = {sigma_y:.12f}, sigma z = {sigma_z:.12f}")
+            else:
+                print(f" Input mean sigma: {np.mean([sigma_x, sigma_y, sigma_z]):.12f}")
+            print(f" Input ew_eta:     {ew_eta_i:.12f}")
+            print(f" Coefficient:      {c_i:.12f}")
+            print(f" Chi:              {chi_i:.12f}")
+            print(f" Contribution:     {c_i * chi_i:.12f}")
+        Ek = Ek_uncorr - chi
+        
     results = {
         'Ek_uncorr': Ek_uncorr,
         'Ek_probe': Ek_regular,
         'Ek_ss_ng': Ek,
     }
+    
     print('khf_ss_ng results:')
     print(' Ek_uncorr = %.15g' % Ek_uncorr)
     print(' Ek_probe = %.15g' % Ek_regular)
@@ -1733,7 +1767,11 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
     
     if force_centered:
         if force_isotropic:
-            initial_guess = [1./num_gaussians, 0.75] * num_gaussians
+            initial_guess = [1./num_gaussians, 1.5] * num_gaussians
+            a0 = 1.25
+            beta = 0.5
+            sigmas = [a0 * beta ** i for i in range(num_gaussians)]
+            initial_guess[1::2] = sigmas
             num_gauss_params = 2
             offset = 0
 
