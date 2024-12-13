@@ -1111,7 +1111,8 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
     print(' Ek_uncorr = %.15g' % Ek_uncorr)
     print(' Ek_probe = %.15g' % Ek_regular)
     print(' Ek_ss_ng = %.15g' % Ek)
-   
+    
+    print('Total time for SS-NG: %.2f seconds' % (time.time() - fit_start))
     return results
 
 def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_coeff_kpts=None, 
@@ -1772,7 +1773,7 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
             beta = 0.5
             sigmas = [a0 * beta ** i for i in range(num_gaussians)]
             initial_guess[1::2] = sigmas
-            num_gauss_params = 2
+            num_gauss_srfparams = 2
             offset = 0
 
             sigma_indices = [1]

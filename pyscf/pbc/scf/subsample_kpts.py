@@ -313,7 +313,7 @@ def subsample_kpts(mf, dim, div_vector, dm_kpts=None, mo_coeff_kpts=None, khf_ro
             ew_eta = 1./np.sqrt(2.) * sigma
 
             chi = madelung_modified(mf.cell, kpts_div, shift, ew_eta=ew_eta, anisotropic=False)
-            Ek = Ek_uncorr + nocc * chi # no need to multiply by nocc for this case.
+            Ek = Ek_uncorr - nocc * chi # no need to multiply by nocc for this case.
 
             print('Ek (a.u.) = ', Ek, file=f)
             results["Ek_list"].append(Ek_regular)
