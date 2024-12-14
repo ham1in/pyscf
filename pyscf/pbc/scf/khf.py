@@ -1773,7 +1773,7 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
             beta = 0.5
             sigmas = [a0 * beta ** i for i in range(num_gaussians)]
             initial_guess[1::2] = sigmas
-            num_gauss_srfparams = 2
+            num_gauss_params = 2
             offset = 0
 
             sigma_indices = [1]

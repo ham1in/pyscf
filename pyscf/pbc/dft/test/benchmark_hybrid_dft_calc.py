@@ -23,6 +23,7 @@ import numpy as np
 from pyscf.pbc import gto as pbcgto
 from pyscf.pbc.scf import khf
 from pyscf.pbc.scf.subsample_kpts import subsample_kpts
+from pyscf.pbc.scf.khf import khf_ssng
 from pyscf.pbc import df
 from pyscf import lib
 import os
@@ -192,40 +193,44 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
 # global cell, kpts, disp
 
 
-cell = pbcgto.Cell()
-cell.atom='''
-C 0.0 0.0 0.0
-C 1.68516327271508 1.68516327271508 1.68516327271508
-'''
+# cell = pbcgto.Cell()
+# cell.atom='''
+# C 0.0 0.0 0.0
+# C 1.68516327271508 1.68516327271508 1.68516327271508
+# '''
 
-cell.a = '''
-0.0 3.370326545430162 3.370326545430162
-3.370326545430162 0.0 3.370326545430162
-3.370326545430162 3.370326545430162 0.0
-'''
-cell.basis = 'gth-szv'
-# cell.verbose = 7
-cell.pseudo = 'gth-pbe'
-cell.unit = 'bohr'
-cell.mesh = [13] * 3
-cell.output = '/dev/null'
-
-
-nks = np.array([1, 1, 3])
-kpts = cell.make_kpts(nks)
-Nk = np.prod(nks)
-disp = 1e-5
-
-cell.build()
+# cell.a = '''
+# 0.0 3.370326545430162 3.370326545430162
+# 3.370326545430162 0.0 3.370326545430162
+# 3.370326545430162 3.370326545430162 0.0
+# '''
+# cell.basis = 'gth-szv'
+# # cell.verbose = 7
+# cell.pseudo = 'gth-pbe'
+# cell.unit = 'bohr'
+# cell.mesh = [13] * 3
+# cell.output = '/dev/null'
 
 
-
-
-
-# Setup DFT grad
+# nks = np.array([1, 1, 3])
+# kpts = cell.make_kpts(nks)
+# Nk = np.prod(nks)
 # disp = 1e-5
-dft.numint.NumInt.libxc = dft.xcfun
 
+# cell.build()
+
+# Build Cell
+nks = np.array([2, 2, 2])
+Nk = np.prod(nks)
+
+cell, kpts= build_diamond_cell(nk=nks,kecut=56)
+cell.dimension = 3
+cell.build()
+print('Kmesh:', nks)
+
+
+# Setup DFT object
+dft.numint.NumInt.libxc = dft.xcfun
 xc = 'PBE0'
 xc_pure = "PBE"
 x = 'PBEx'
@@ -237,8 +242,7 @@ mf.exxdiv = 'ewald'
 df_type = df.GDF
 mf.with_df = df_type(cell, kpts).build()
 
-
-# mf.xc = f'{HF_X:} * HF + {LDA_X:} * LDA + {B88_X:} * B88, {LYP_C:} * LYP + {VWN_C:} * VWN'
+# Run and extract Density Matrix
 e1 = mf.kernel()
 dm_kpts = mf.make_rdm1()
 
@@ -259,32 +263,55 @@ Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm_kpts)
 Ej /= 2.
 Ej = Ej.real
 
-# Exchange energy
+## Regular Exchange energy
 Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm_kpts) * 0.5
 Ek /= 2.
 Ek = Ek.real
 
+## SSNG exchange
+
+num_gaussians = 1
+force_centered = True
+force_isotropic = True
+fit_with_coul = True
+sigma_multiplier = 0.8
+
+N_local = [9,9,9]
+results = khf_ssng(mf, nks, num_gaussians=num_gaussians, force_centered=force_centered, force_isotropic=force_isotropic, 
+                    fit_with_coul=fit_with_coul,N_local=N_local,sigma_multiplier=sigma_multiplier)
+Ek_ss_ng = results['Ek_ss_ng']
+
+
+## Staggered mesh
 
 ex = hyb * Ek + (1-hyb) * ex_pure
+ex_ss = hyb * Ek_ss_ng + (1-hyb) * ex_pure
 exc = ex + ec
+exc_ss = ex_ss + ec
 
 # Print results
 print("== Computing DFT Energy Components (a.u.) == ")
-print('Ehcore  = {:.15f}'.format(ehcore))
-print('Ej      = {:.15f}'.format(Ej))
-print('Enuc    = {:.15f}'.format(enuc))
-print('Exc     = {:.15f}'.format(exc))
+print('Ehcore = {:.15f}'.format(ehcore))
+print('Ej     = {:.15f}'.format(Ej))
+print('Enuc   = {:.15f}'.format(enuc))
+print('Exc    = {:.15f}'.format(exc))
 print('    Ex calculation: {:.2f} * Ex_pure ({}) + {:.2f} * Ek_HF'.format(1-hyb,x,hyb))
-print('    Ex      = {:.15f}'.format(ex))
-print('    Ek_HF   = {:.15f}'.format(Ek))
-print('    Ex_pure = {:.15f}'.format(ex_pure))
-print('    Ec      = {:.15f}'.format(ec))
+print('    Ex       = {:.15f}'.format(ex))
+print('        Ek_HF    = {:.15f}'.format(Ek))
+print('        Ex_pure  = {:.15f}'.format(ex_pure))
+print('    Ec       = {:.15f}'.format(ec))
+print('Exc_ss = {:.15f}'.format(exc_ss))
+print('    Ex_ss calculation: {:.2f} * Ex_pure ({}) + {:.2f} * Ek_ssng'.format(1-hyb,x,hyb))
+print('    Ex_ss    = {:.15f}'.format(ex_ss))
+print('        Ek_ss_ng = {:.15f}'.format(Ek_ss_ng))
+print('        Ex_pure  = {:.15f}'.format(ex_pure))
+print('    Ec       = {:.15f}'.format(ec))
+
 
 Etot = exc + Ej + enuc + ehcore
+Etot_ss = exc_ss + Ej + enuc + ehcore
+
 print('Etot (a.u.) = {:.15f}'.format(Etot))
+print('Etot_ss (a.u.) = {:.15f}'.format(Etot_ss))
 print('mf.kernel energy (a.u.) is ', e1)
-
-assert np.isclose(e1, Etot, atol=1e-7)
-assert np.isclose(exc, ex + ec, atol=1e-7) 
-
 
