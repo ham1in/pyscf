@@ -1040,7 +1040,7 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
     params = compute_SqG_anisotropy(cell=mf.cell, nks=nks, N_local=N_local, dm_kpts=dm_kpts,
                                     mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
                                     return_all_params=True, force_centered=force_centered,
-                                    force_isotropic=force_isotropic, fit_with_coul=fit_with_coul
+                                    force_isotropic=force_isotropic, fit_with_coul=fit_with_coul,
                                     auto_guess=auto_guess)
     fit_end = time.time()
     params[1::num_gaussian_params] *= sigma_multiplier
