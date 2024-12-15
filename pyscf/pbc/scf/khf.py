@@ -1016,7 +1016,8 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         
         return ewg - ewg_analytical
 
-def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, sigma_multiplier=1.0):
+def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, 
+             sigma_multiplier=1.0,auto_guess=True):
     from pyscf.pbc.scf.khf import madelung_modified
     from pyscf.pbc.tools import madelung
     import time
@@ -1039,7 +1040,8 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
     params = compute_SqG_anisotropy(cell=mf.cell, nks=nks, N_local=N_local, dm_kpts=dm_kpts,
                                     mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
                                     return_all_params=True, force_centered=force_centered,
-                                    force_isotropic=force_isotropic, fit_with_coul=fit_with_coul)
+                                    force_isotropic=force_isotropic, fit_with_coul=fit_with_coul
+                                    auto_guess=auto_guess)
     fit_end = time.time()
     params[1::num_gaussian_params] *= sigma_multiplier
 
@@ -1759,17 +1761,28 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=Fa
     return result
 
 def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropic=False,
-                     force_centered=False, with_coul=False):
+                     force_centered=False, with_coul=False, auto_guess=True):
 
     # Initial guess for parameters
     # initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0,
     #                  np.std(xyz_input[:, 0]), np.std(xyz_input[:, 1]), np.std(xyz_input[:, 2])] * num_gaussians
     
+
     
     if force_centered:
         if force_isotropic:
             initial_guess = [1./num_gaussians, 1.5] * num_gaussians
-            a0 = 1.25
+            if auto_guess:
+                # Find index that has closest value to np.exp(-1./2) or 1 sigma away
+                target = np.exp(-1.0 / 2.0)  
+
+                # Find the index of the closest value
+                target_index = np.argmin(np.abs(f_input - target))
+                a0 = np.linalg.norm(xyz_input[target_index,:])
+                if a0 < 0.1:
+                    a0 = 1.25
+
+            # a0 = 1.25
             beta = 0.5
             sigmas = [a0 * beta ** i for i in range(num_gaussians)]
             initial_guess[1::2] = sigmas
@@ -1801,6 +1814,7 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
             # return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
             # Least squares
             return np.sum((contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f) ** 2)
+    
 
     # Constraint where all c_i must be positive and sum to 1
     def normalization(params):
@@ -1856,7 +1870,7 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
 
 def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None,
                            SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True, 
-                           force_isotropic=False, fit_with_coul=False):
+                           force_isotropic=False, fit_with_coul=False,auto_guess=True):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1973,7 +1987,8 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
     
     # Fit Gaussian to data
     params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
-                              force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul)
+                              force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
+                              auto_guess=auto_guess)
 
     # Extract sigma values or all parameters
     if return_all_params:
