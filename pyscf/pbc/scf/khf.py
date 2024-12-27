@@ -888,9 +888,10 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
     chargs = cell_input.atom_charges()
     log_precision = np.log(cell_input.precision / (chargs.sum() * 16 * np.pi ** 2))
     ke_cutoff = -2 * np.mean(ew_eta) ** 2 * log_precision
+    ke_cutoff = min(ke_cutoff,cell.ke_cutoff) # Mesh shouldn't be bigger than the one used in the calculation
     # Get FFT mesh from cutoff value
     mesh = cell_input.cutoff_to_mesh(ke_cutoff)
-    
+
     # Get grid
     Gv, Gvbase, weights = cell_input.get_Gv_weights(mesh=mesh)
     # Get q+G points
@@ -2405,8 +2406,6 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
             else:
                 ew_eta_i = 1./np.sqrt(2.) * np.array([sigma_x, sigma_y, sigma_z])
                 anisotropic = True
-                
-                
 
             # ew_eta = 20
             # ew_eta = 0.219935106676302
