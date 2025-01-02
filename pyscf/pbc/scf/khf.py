@@ -1775,11 +1775,14 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
             initial_guess = [1./num_gaussians, 1.5] * num_gaussians
             if auto_guess:
                 # Find index that has closest value to np.exp(-1./2) or 1 sigma away
-                target = np.exp(-1.0 / 2.0)  
+                # 
+                stds = 2.
+                target = np.exp(-stds**2 / 2.0)  
 
                 # Find the index of the closest value
                 target_index = np.argmin(np.abs(f_input - target))
                 a0 = np.linalg.norm(xyz_input[target_index,:])
+                a0 *= 1/stds
                 if a0 < 0.1:
                     a0 = 1.25
 
