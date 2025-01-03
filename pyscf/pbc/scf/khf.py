@@ -1035,10 +1035,10 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
     else:
         num_gaussian_params = 4
 
+    fit_start = time.time()
     if sigma is None:
         # Fit Gaussian to Structure Factor
         print('Fitting gaussian parameters... ')
-        fit_start = time.time()
         params = compute_SqG_anisotropy(cell=mf.cell, nks=nks, N_local=N_local, dm_kpts=dm_kpts,
                                         mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
                                         return_all_params=True, force_centered=force_centered,
@@ -1051,6 +1051,8 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
         print('Fitting parameters: ', params)
     else:
         print('Using provided sigma values: ', sigma)
+        params = np.zeros(num_gaussian_params * num_gaussians)
+        params[::num_gaussian_params] = nocc/num_gaussians
         params[1::num_gaussian_params] = sigma
 
     # Compute Exchange Energies
