@@ -1018,7 +1018,7 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         return ewg - ewg_analytical
 
 def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, 
-             sigma_multiplier=1.0,sigma=None,auto_guess=True):
+             sigma_multiplier=1.0,sigma=None,auto_guess=True,fit_method="scipy_minimize"):
     from pyscf.pbc.scf.khf import madelung_modified
     from pyscf.pbc.tools import madelung
     import time
@@ -1039,11 +1039,11 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
     if sigma is None:
         # Fit Gaussian to Structure Factor
         print('Fitting gaussian parameters... ')
-        params = compute_SqG_anisotropy(cell=mf.cell, nks=nks, N_local=N_local, dm_kpts=dm_kpts,
+        params = compute_SqG_anisotropy(mf,cell=mf.cell, nks=nks, N_local=N_local, dm_kpts=dm_kpts,
                                         mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
                                         return_all_params=True, force_centered=force_centered,
                                         force_isotropic=force_isotropic, fit_with_coul=fit_with_coul,
-                                        auto_guess=auto_guess)
+                                        auto_guess=auto_guess,fit_method=fit_method)
         fit_end = time.time()
         params[1::num_gaussian_params] *= sigma_multiplier
 
@@ -1076,7 +1076,7 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
         ew_eta = 1. / np.sqrt(2.) * sigma
 
         chi = madelung_modified(mf.cell, kpts, shift, ew_eta=ew_eta, anisotropic=False)
-        Ek = Ek_uncorr - nocc * chi  
+        Ek = Ek_uncorr - nocc * chi
     else:
         shifted = np.array([0,0,0])
         num_gauss_params = 2
@@ -1095,7 +1095,7 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
             else:
                 ew_eta_i = 1./np.sqrt(2.) * np.array([sigma_x, sigma_y, sigma_z])
                 anisotropic = True
-                
+
 
             chi_i = madelung_modified(mf.cell, kpts, shifted, ew_eta=ew_eta_i,anisotropic=anisotropic)
             chi = chi + c_i * chi_i
@@ -1109,22 +1109,22 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
             print(f" Chi:              {chi_i:.12f}")
             print(f" Contribution:     {c_i * chi_i:.12f}")
         Ek = Ek_uncorr - chi
-        
+
     results = {
         'Ek_uncorr': Ek_uncorr,
         'Ek_probe': Ek_regular,
         'Ek_ss_ng': Ek,
     }
-    
+
     print('khf_ss_ng results:')
     print(' Ek_uncorr = %.15g' % Ek_uncorr)
     print(' Ek_probe = %.15g' % Ek_regular)
     print(' Ek_ss_ng = %.15g' % Ek)
-    
+
     print('Total time for SS-NG: %.2f seconds' % (time.time() - fit_start))
     return results
 
-def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_coeff_kpts=None, 
+def khf_stagger(icell, ikpts, version="Non-SCF", df_type=None, dm_kpts=None, mo_coeff_kpts=None,
                 kshift_rel=0.5, fourinterp=False, ss_params={}, modified_madelung_params={}):
     from pyscf.pbc.tools.pbc import get_monkhorst_pack_size
     from pyscf.pbc import gto,scf
@@ -1733,12 +1733,13 @@ def contracted_gaussian_model(params, xyz, num_gaussians=1):
         result += c_i * gaussian_model([mu_x, mu_y, mu_z, sigma_x, sigma_y, sigma_z], xyz)
 
     return result
-def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=False,with_coul=False):
+def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=False,with_coul=False,method='scipy_minimize',c_0=0.0):
     # Define Gaussian model function
     # xyz in shape (n, 3)
     num_gauss_params = 4 # per gaussian
     if isotropic:
         num_gauss_params -= 2
+    
     if with_coul:
         def gaussian_model(params, xyz):
             sigma_x, sigma_y, sigma_z = params
@@ -1754,8 +1755,31 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=Fa
                         (xyz[:, 2]) ** 2 / (2 * sigma_z ** 2))
             return np.exp(exponent)
 
-    assert len(params) == num_gauss_params * num_gaussians
+    # assert len(params) == num_gauss_params * num_gaussians
     result = np.zeros(xyz.shape[0])
+    
+    
+    # if method == 'scipy_minimize':
+    #     offset = 0
+    # elif method == 'scipy_least_squares':
+    #     offset = -1
+
+    # if isotropic:
+    #     for i in range(num_gaussians):
+    #         if i == 0 and method == 'scipy_least_squares':
+    #             c_i = c_0
+    #             sigma = params[1]
+    #         else:
+    #             c_i, sigma = params[i * num_gauss_params+offset:(i + 1) * num_gauss_params+offset]
+    #         result += c_i * gaussian_model([sigma,sigma,sigma], xyz)
+    # else:
+    #     for i in range(num_gaussians):
+    #         if i == 0 and method == 'scipy_least_squares':
+    #             c_i = c_0
+    #             sigma_x, sigma_y, sigma_z = params[1:4]
+    #         else:
+    #             c_i, sigma_x, sigma_y, sigma_z = params[i * num_gauss_params:(i + 1) * num_gauss_params]
+    #         result += c_i * gaussian_model([sigma_x, sigma_y, sigma_z], xyz)
     if isotropic:
         for i in range(num_gaussians):
             c_i, sigma = params[i * num_gauss_params:(i + 1) * num_gauss_params]
@@ -1768,7 +1792,7 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=Fa
     return result
 
 def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropic=False,
-                     force_centered=False, with_coul=False, auto_guess=True):
+                     force_centered=False, with_coul=False, auto_guess=True, method="scipy_minimize"):
 
     # Initial guess for parameters
     # initial_guess = [nocc/num_gaussians, 0.0, 0.0, 0.0,
@@ -1781,9 +1805,8 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
             initial_guess = [1./num_gaussians, 1.5] * num_gaussians
             if auto_guess:
                 # Find index that has closest value to np.exp(-1./2) or 1 sigma away
-                # 
                 stds = 2.
-                target = np.exp(-stds**2 / 2.0)  
+                target = np.exp(-stds**2 / 2.0)
 
                 # Find the index of the closest value
                 target_index = np.argmin(np.abs(f_input - target))
@@ -1808,9 +1831,18 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
 
             sigma_indices = [1, 2, 3]
 
-        def residuals(params, xyz, f, pow=2):
+        def residuals(params_input, xyz, f, pow=2, method=method):
+            if method == "scipy_least_squares":
+                params = np.zeros(len(params_input)+1)
+                params[1:] = params_input
+                params[0] = 1 - np.sum(params_input[num_gauss_params::num_gauss_params])
+            elif method == "scipy_minimize":
+                params = params_input
+            else:
+                raise ValueError(f"Method {method} not recognized")
+
             f_fit = contracted_gaussian_model_centered(params, xyz, num_gaussians=num_gaussians,
-                                                    isotropic=force_isotropic, with_coul=with_coul)
+                                                    isotropic=force_isotropic, with_coul=with_coul,method=method)
             return np.sum(np.abs(f_fit - f)**pow)
 
     else:
@@ -1824,7 +1856,7 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
             # return contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f
             # Least squares
             return np.sum((contracted_gaussian_model(params, xyz, num_gaussians=num_gaussians) - f) ** 2)
-    
+
 
     # Constraint where all c_i must be positive and sum to 1
     def normalization(params):
@@ -1835,16 +1867,27 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
     ]
 
     # Force positive c and sigma values
-    single_bound = [(None, None)] * num_gauss_params
+    single_bound = [(-np.inf, np.inf)] * num_gauss_params
     single_bound[0] = (0.0,None)
     # for index in sigma_indices:
     #     single_bound[index] = (0.0, None)
     bounds = single_bound * num_gaussians
 
     from scipy.optimize import least_squares,minimize
-    result = minimize(residuals, initial_guess, args=(xyz_input, f_input/nocc), constraints=constraints,bounds=bounds)
-    params = result.x
+    if method == "scipy_minimize":
+        result = minimize(residuals, initial_guess, args=(xyz_input, f_input/nocc), constraints=constraints,bounds=bounds)
+        params = result.x
 
+    elif method == "scipy_least_squares":
+        # Modify inital guess to take into account normalization constraints
+        initial_guess = initial_guess[1:]
+        bounds = bounds[1:]
+        if len(bounds) == 1:
+            bounds = bounds[0]
+        result = least_squares(residuals, initial_guess, args=(xyz_input, f_input/nocc), bounds=bounds)
+        params = np.zeros(len(result.x)+1)
+        params[1:] = result.x
+        params[0] = 1 - np.sum(result.x[num_gauss_params-1::num_gauss_params])
     # Renormalize the c_i values
     params[::num_gauss_params] *= nocc
 
@@ -1878,9 +1921,9 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
 
     return params
 
-def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None, mf=None,
-                           SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True, 
-                           force_isotropic=False, fit_with_coul=False,auto_guess=True):
+def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None,
+                           SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True,
+                           force_isotropic=False, fit_with_coul=False,auto_guess=True,fit_method="scipy_minimize"):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1890,9 +1933,7 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
         N_local = np.array(N_local)
     N_local_x, N_local_y, N_local_z = N_local
 
-    kpts = cell.make_kpts(nks, wrap_around=True)
-    if mf is None:
-        mf = KRHF(cell, exxdiv='ewald')
+    kpts = mf.kpts
     nkpts = np.prod(nks)
 
     # Nk = np.prod(kmesh)
@@ -1998,7 +2039,7 @@ def compute_SqG_anisotropy(cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpt
     # Fit Gaussian to data
     params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
                               force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
-                              auto_guess=auto_guess)
+                              auto_guess=auto_guess,method=fit_method)
 
     # Extract sigma values or all parameters
     if return_all_params:
