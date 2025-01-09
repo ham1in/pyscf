@@ -1018,7 +1018,7 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         return ewg - ewg_analytical
 
 def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, 
-             sigma_multiplier=1.0,sigma=None,auto_guess=True,fit_method="scipy_minimize"):
+             sigma_multiplier=1.0,sigma=None,auto_guess=True,fit_method="scipy_minimize",qG_norm_cutoff=None):
     from pyscf.pbc.scf.khf import madelung_modified
     from pyscf.pbc.tools import madelung
     import time
@@ -1043,7 +1043,7 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
                                         mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
                                         return_all_params=True, force_centered=force_centered,
                                         force_isotropic=force_isotropic, fit_with_coul=fit_with_coul,
-                                        auto_guess=auto_guess,fit_method=fit_method)
+                                        auto_guess=auto_guess,fit_method=fit_method,qG_norm_cutoff=qG_norm_cutoff)
         fit_end = time.time()
         params[1::num_gaussian_params] *= sigma_multiplier
 
@@ -1923,7 +1923,8 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
 
 def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None,
                            SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True,
-                           force_isotropic=False, fit_with_coul=False,auto_guess=True,fit_method="scipy_minimize"):
+                           force_isotropic=False, fit_with_coul=False,auto_guess=True,fit_method="scipy_minimize",
+                           debug=True,qG_norm_cutoff=None):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1934,6 +1935,7 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
     N_local_x, N_local_y, N_local_z = N_local
 
     kpts = mf.kpts
+    # kpts = cell.make_kpts(nks,wrap_around=True)
     nkpts = np.prod(nks)
 
     # Nk = np.prod(kmesh)
@@ -1953,7 +1955,7 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
     uKpts = build_uKpts(mf, kpts, dm_kpts, mo_coeff_kpts)
     nocc = cell.tot_electrons() // 2
 
-  
+
     #   Step 1.1: evaluate AO on a real fine mesh in unit cell
     Lvec_recip = cell.reciprocal_vectors()
     Lvec_real = mf.cell.lattice_vectors()
@@ -1999,6 +2001,32 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
     else:
         SqG = build_SqG(nkpts, nG, nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D)
 
+    # Assert SqG at the origin is nocc
+    assert np.abs(SqG[0, 0] - nocc) < 1e-4
+
+    if debug:
+        # section to manually compute exchange energy
+        qG_full = np.zeros((nG * nkpts, 3))
+        SqG_full = np.zeros(nG * nkpts)
+
+        for iq in range(qGrid.shape[0]):
+            qG = qGrid[iq, :] + GptGrid3D
+            start_idx = iq * nG
+            end_idx = (iq + 1) * nG
+            qG_full[start_idx:end_idx, :] = qG
+            SqG_full[start_idx:end_idx] = SqG[iq, :]
+
+        qG2 = np.linalg.norm(qG_full,axis=1)**2
+        summand = SqG_full/qG2
+        summand[np.isinf(summand)] = 0
+
+        b = cell.reciprocal_vectors()/nks
+        weights = abs(np.linalg.det(b))
+        weights *= 1/(2*np.pi)**3
+
+        E_ex = - 4 * np.pi * np.sum(summand) * weights
+        print(f'DEBUG: Exchange energy from SqG is {E_ex:.6f}')
+
     #   Reciprocal lattice within the local domain
     GptGrid3D_local = build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip)
 
@@ -2016,7 +2044,7 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
     SqG = SqG[:, idx_GptGrid3D_local]
 
     # Fit Gaussian to data
-    nqG_local_3D = np.prod(N_local * nks)  
+    nqG_local_3D = np.prod(N_local * nks)
     N_local_3D = np.prod(N_local)
     qG_full = np.zeros((nqG_local_3D, 3))
     SqG_local_full = np.zeros(nqG_local_3D)
@@ -2031,11 +2059,22 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
             SqG_local_full[start_idx:end_idx] = SqG[iq, :]/np.sum(qG**2,axis=1)
         else:
             SqG_local_full[start_idx:end_idx] = SqG[iq, :]
-            
+
     # Remove inf and nan values
     qG_full = qG_full[~np.isinf(SqG_local_full)]
     SqG_local_full = SqG_local_full[~np.isinf(SqG_local_full)]
-    
+
+    # Restrict fitting to qG with norm less than qG_norm_cutoff
+    if qG_norm_cutoff is not None:
+        print("Using qG norm cutoff, fitting to qG with norm less than", qG_norm_cutoff)
+        # If norm cutoff within the Nlocal BZs, print warning
+        if max(np.linalg.norm(cell.reciprocal_vectors()*N_local,axis=1)) < qG_norm_cutoff:
+            print("NOTE: qG_norm_cutoff is outside the longest dimension of the NlocalBZs")
+
+        qG_norm = np.linalg.norm(qG_full,axis=1)
+        SqG_local_full = SqG_local_full[qG_norm < qG_norm_cutoff]
+        qG_full = qG_full[qG_norm < qG_norm_cutoff]
+
     # Fit Gaussian to data
     params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
                               force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
