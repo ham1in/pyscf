@@ -2066,15 +2066,36 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
 
     # Restrict fitting to qG with norm less than qG_norm_cutoff
     if qG_norm_cutoff is not None:
+        qG_norm = np.linalg.norm(qG_full,axis=1)
+
+        if qG_norm_cutoff == "auto":
+            print("Automatically finding qG norm cutoff")
+            # Find all unique norm(q+G)
+            unique_qG_norms = np.unique(qG_norm)
+
+            # For each unique norm, find the number of points at that norm 
+            num_points = []
+            for norm in unique_qG_norms:
+                num_points.append(np.sum(qG_norm <= norm + 1e-8))
+
+            # Find the minimum norm that has at least 8 points
+            qG_norm_cutoff = unique_qG_norms[np.argmax(np.array(num_points) >= 8)] + 1e-8
+            
+            print('Computed qG norm cutoff is', qG_norm_cutoff)
+
+            if qG_norm_cutoff < 1e-8:
+                raise ValueError("qG_norm_cutoff is too small")
+
         print("Using qG norm cutoff, fitting to qG with norm less than", qG_norm_cutoff)
         # If norm cutoff within the Nlocal BZs, print warning
         if max(np.linalg.norm(cell.reciprocal_vectors()*N_local,axis=1)) < qG_norm_cutoff:
             print("NOTE: qG_norm_cutoff is outside the longest dimension of the NlocalBZs")
 
-        qG_norm = np.linalg.norm(qG_full,axis=1)
         SqG_local_full = SqG_local_full[qG_norm < qG_norm_cutoff]
         qG_full = qG_full[qG_norm < qG_norm_cutoff]
 
+        print("Number of fitting points: ", len(SqG_local_full))
+        
     # Fit Gaussian to data
     params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
                               force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
