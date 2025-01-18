@@ -2327,14 +2327,23 @@ def build_SqG_k1k2_spec_qG(nkpts, nG, nbands, kGrid1, kGrid2, qG_full, kmf, uKpt
             idx_kpt2 = idx_kpt2[0]
             kGdiff = kpt2 - kpt2_BZ
 
-            for n in range(nbands):
-                for m in range(nbands):
-                    u1 = uKpts1[k, n, :]
-                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts2[idx_kpt2, m, :]
-                    rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
-                    # temp_fft = np.fft.fftn((rho12 * dvol))
-                    # temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
-                    temp_SqG_k += np.abs(np.sum(rho12*dvol))**2
+            exp_term = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1)))))
+
+            conj_u1 = np.conj(uKpts1[k, :, :]) # nocc * nG
+            u2 = exp_term * uKpts2[idx_kpt2, :, :]
+            # rho12 should be nocc * nocc * nG
+            # rho12 = np.abs(np.einsum('ng,mg->nm', conj_u1, u2,optimize=True))**2
+            rho12 = np.abs(conj_u1 @ u2.T)**2
+            # rho12 = np.einsum('ng,mg->nm', conj_u1, u2)
+
+            temp_SqG_k = np.sum(rho12) * dvol**2
+            # temp_SqG_k = np.einsum('nm->',rho12) * dvol**2
+            # for n in range(nbands):
+            #     for m in range(nbands):
+            #         u1 = uKpts1[k, n, :]
+            #         u2 = exp_term * uKpts2[idx_kpt2, m, :]
+            #         rho12 = np.conj(u1) * u2
+            #         temp_SqG_k += np.abs(np.sum(rho12*dvol))**2
 
             SqG_full[qG] += temp_SqG_k / nkpts
 
