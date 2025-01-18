@@ -28,6 +28,12 @@ from pyscf.pbc import df
 from pyscf import lib
 from pyscf.pbc.scf.khf import khf_ssng
 import os
+from pyscf.pbc import dft as pbcdft
+from pyscf.pbc.dft import numint as pbcnumint
+from pyscf import dft
+from pyscf.dft import numint
+from pyscf.lib import chkfile
+
 
 cwd = os.getcwd()
 nthreads = 4
@@ -75,7 +81,7 @@ def build_bn_hex_cell(nk=(1, 1, 1), kecut=100):
 
     kpts = cell.make_kpts(nk, wrap_around=True)
     return cell, kpts
-def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
+def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True,with_gamma_point=True):
     cell = pbcgto.Cell()
     cell.unit = 'Bohr'
     cell.atom='''
@@ -98,7 +104,7 @@ def build_diamond_cell(nk = (1,1,1),kecut=100,wrap_around=True):
 
     cell.build()
     cell.omega = 0
-    kpts = cell.make_kpts(nk, wrap_around=wrap_around)    
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
 def build_h2_cell(nk = (1,1,1),kecut=100,vac_dim=6.0,wrap_around=True):
     cell = pbcgto.Cell()
@@ -210,7 +216,6 @@ Te  6.02031374618   6.02031374618   6.02031374618
 6.02031374618   6.02031374618   0.00000000000
 
         '''
-
     cell.verbose = 7
     cell.spin = 0
     cell.charge = 0
@@ -232,7 +237,7 @@ Si  0.00000000000   0.00000000000   0.00000000000
 Si  2.57177646209   2.57177646209   2.57177646209
         '''
 
-              
+
     cell.a = '''
 0.00000000000   5.14355292417   5.14355292417
 5.14355292417   0.00000000000   5.14355292417
@@ -249,33 +254,171 @@ Si  2.57177646209   2.57177646209   2.57177646209
     cell.ke_cutoff = kecut
     cell.max_memory = 240000
     cell.build()
+    kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)
+    return cell, kpts
+
+def build_cBN_cell(nk = (1,1,1),kecut=100,with_gamma_point=True,wrap_around=True,a=6.83324967102632):
+    cell = pbcgto.Cell()
+    cell.unit = 'Bohr'
+    pos = a/4
+    A_1d = a/2
+
+    cell.atom = [['B',(0, 0, 0)],
+                 ['N',(pos, pos, pos)]]
+
+    cell.a = [[0.0,A_1d,A_1d],
+              [A_1d,0.0,A_1d],
+              [A_1d,A_1d,0.0]]
+
+
+    cell.verbose = 7
+    cell.spin = 0
+    cell.charge = 0
+    cell.basis = 'gth-szv'
+    cell.pseudo = 'gth-pbe'
+    cell.precision = 1e-8
+    #cell.ke_cutoff = 55.13
+    cell.ke_cutoff = kecut
+    cell.max_memory = 240000
+    cell.build()
     kpts = cell.make_kpts(nk, wrap_around=wrap_around,with_gamma_point=with_gamma_point)    
     return cell, kpts
 
-
-nkx = 1
-nks = [nkx, nkx, nkx]
-cell, kpts= build_SnS_cell(nk=nks,kecut=56)
+nk = 3
+nks = np.array([nk, nk, nk])
+Nk = np.prod(nks)
+cell, kpts= build_cBN_cell(nk=nks,kecut=150,with_gamma_point=False)
 cell.dimension = 3
 cell.build()
 
 print('Kmesh:', nks)
 
-mf = khf.KRHF(cell, exxdiv='ewald')
+# # HF
+# mf = khf.KRHF(cell, exxdiv='ewald')
+# df_type = df.GDF
+# mf.with_df = df_type(cell, kpts).build()
+
+# Nk = np.prod(nks)
+# mf.exxdiv = 'ewald'
+# e1 = mf.kernel()
+
+
+# num_gaussians = 1
+# force_centered = True
+# force_isotropic = True
+# fit_with_coul = True
+# sigma_multiplier = 1.0
+
+# N_local = [3,3,3]
+# sigma = 0.7
+# results = khf_ssng(mf, nks, num_gaussians=num_gaussians, force_centered=force_centered, force_isotropic=force_isotropic,
+#                     fit_with_coul=fit_with_coul,N_local=N_local,sigma_multiplier=sigma_multiplier,sigma=sigma)
+
+
+# DFT
+# Setup DFT object
+dft.numint.NumInt.libxc = dft.xcfun
+xc = 'PBE0'
+xc_pure = "PBE"
+x = 'PBEx'
+c = 'PBEc'
+
+mf = pbcdft.KRKS(cell, kpts)
+mf.xc = xc
+mf.exxdiv = 'ewald'
 df_type = df.GDF
 mf.with_df = df_type(cell, kpts).build()
 
-Nk = np.prod(nks)
-mf.exxdiv = 'ewald'
+# # If high nk, save to chkfile
+if nk > 8:
+    filename = 'cBN-ss1g-nk'+str(nk)*3+f'-a{a:.3f}.chk'
+    mf.chkfile = filename
+
+# # Load from chkfile
+# scf_result_dic = chkfile.load('chk-1227/'+filename, 'scf')
+# mf.__dict__.update(scf_result_dic)
+# print('E(HF) from chkfile = %s' % mf.e_tot)
+# e1 = mf.e_tot
+
+# Run and extract Density Matrix
 e1 = mf.kernel()
 
 
-num_gaussians = 4
+# Extract density matriz
+dm_kpts = mf.make_rdm1()
+
+## Compute DFT energy components
+ni = pbcnumint.KNumInt()
+_,exc_pure, vxc_pure = pbcnumint.nr_rks(ni,cell, mf.grids, xc_pure, dm_kpts, kpts=kpts)
+_,ex_pure, vx_pure = pbcnumint.nr_rks(ni,cell, mf.grids, x+',', dm_kpts, kpts=kpts)
+_,ec, vc = pbcnumint.nr_rks(ni,cell, mf.grids, ","+c, dm_kpts, kpts=kpts)
+_, _, hyb = ni.rsh_and_hybrid_coeff(xc, spin=cell.spin)
+
+# Nuclear, core, and Hartree energies
+h1e = mf.get_hcore()
+ehcore = 1. / Nk * np.einsum('kij,kji->', h1e, dm_kpts).real
+enuc = mf.energy_nuc().real
+Jo, Ko = mf.get_jk(cell=mf.cell, dm_kpts=dm_kpts, kpts=mf.kpts, kpts_band=mf.kpts, with_j=True)
+
+Ej = 1. / Nk * np.einsum('kij,kji', Jo, dm_kpts)
+Ej /= 2.
+Ej = Ej.real
+
+## Regular Exchange energy
+Ek = -1. / Nk * np.einsum('kij,kji', Ko, dm_kpts) * 0.5
+Ek /= 2.
+Ek = Ek.real
+
+## SSNG exchange
+
+num_gaussians = 1
 force_centered = True
 force_isotropic = True
 fit_with_coul = True
-sigma_multiplier = 0.8
+sigma_multiplier = 1.0
+fit_method = "scipy_least_squares"
+qG_norm_cutoff = "auto"
+
 
 N_local = [9,9,9]
-results = khf_ssng(mf, nks, num_gaussians=num_gaussians, force_centered=force_centered, force_isotropic=force_isotropic, 
-                    fit_with_coul=fit_with_coul,N_local=N_local,sigma_multiplier=sigma_multiplier)
+results = khf_ssng(mf, nks, num_gaussians=num_gaussians, force_centered=force_centered, force_isotropic=force_isotropic,
+            fit_with_coul=fit_with_coul,N_local=N_local,sigma_multiplier=sigma_multiplier,fit_method=fit_method,
+            qG_norm_cutoff=qG_norm_cutoff)
+
+Ek_ss_ng = results['Ek_ss_ng']
+
+
+## Staggered mesh
+
+ex = hyb * Ek + (1-hyb) * ex_pure
+ex_ss = hyb * Ek_ss_ng + (1-hyb) * ex_pure
+exc = ex + ec
+exc_ss = ex_ss + ec
+
+# Print results
+print("== Computing DFT Energy Components (a.u.) == ")
+print('Ehcore = {:.15f}'.format(ehcore))
+print('Ej     = {:.15f}'.format(Ej))
+print('Enuc   = {:.15f}'.format(enuc))
+print('Exc    = {:.15f}'.format(exc))
+print('    Ex calculation: {:.2f} * Ex_pure ({}) + {:.2f} * Ek_HF'.format(1-hyb,x,hyb))
+print('    Ex       = {:.15f}'.format(ex))
+print('        Ek_HF    = {:.15f}'.format(Ek))
+print('        Ex_pure  = {:.15f}'.format(ex_pure))
+print('    Ec       = {:.15f}'.format(ec))
+print('Exc_ss = {:.15f}'.format(exc_ss))
+print('    Ex_ss calculation: {:.2f} * Ex_pure ({}) + {:.2f} * Ek_ssng'.format(1-hyb,x,hyb))
+print('    Ex_ss    = {:.15f}'.format(ex_ss))
+print('        Ek_ss_ng = {:.15f}'.format(Ek_ss_ng))
+print('        Ex_pure  = {:.15f}'.format(ex_pure))
+print('    Ec       = {:.15f}'.format(ec))
+
+
+Etot = exc + Ej + enuc + ehcore
+Etot_ss = exc_ss + Ej + enuc + ehcore
+
+print('Etot (a.u.) = {:.15f}'.format(Etot))
+print('Etot_ss (a.u.) = {:.15f}'.format(Etot_ss))
+print('mf.kernel energy (a.u.) is ', e1)
+
+assert np.isclose(exc, ex + ec, atol=1e-7)

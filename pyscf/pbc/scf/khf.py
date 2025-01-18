@@ -1017,8 +1017,9 @@ def madelung_modified(cell, kpts, shifted, ew_eta=None, anisotropic=False):
         
         return ewg - ewg_analytical
 
-def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None, 
-             sigma_multiplier=1.0,sigma=None,auto_guess=True,fit_method="scipy_minimize",qG_norm_cutoff=None):
+def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True, fit_with_coul=False, N_local=None,
+             sigma_multiplier=1.0,sigma=None,auto_guess=True,fit_method="scipy_minimize",qG_norm_cutoff=None,
+             compute_necessary_qG=True):
     from pyscf.pbc.scf.khf import madelung_modified
     from pyscf.pbc.tools import madelung
     import time
@@ -1043,7 +1044,8 @@ def khf_ssng(mf, nks, num_gaussians=1, force_centered=True, force_isotropic=True
                                         mo_coeff_kpts=mf.mo_coeff_kpts, num_gaussians=num_gaussians,
                                         return_all_params=True, force_centered=force_centered,
                                         force_isotropic=force_isotropic, fit_with_coul=fit_with_coul,
-                                        auto_guess=auto_guess,fit_method=fit_method,qG_norm_cutoff=qG_norm_cutoff)
+                                        auto_guess=auto_guess,fit_method=fit_method,qG_norm_cutoff=qG_norm_cutoff,
+                                        compute_necessary_qG=compute_necessary_qG)
         fit_end = time.time()
         params[1::num_gaussian_params] *= sigma_multiplier
 
@@ -1924,7 +1926,7 @@ def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians
 def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm_kpts=None, mo_coeff_kpts=None,
                            SqG_filename=None, num_gaussians=1, return_all_params=False,force_centered=True,
                            force_isotropic=False, fit_with_coul=False,auto_guess=True,fit_method="scipy_minimize",
-                           debug=True,qG_norm_cutoff=None):
+                           debug=True,qG_norm_cutoff=None,compute_necessary_qG=True):
     # Perform a smaller calculation of the same system to get the anisotropy of SqG\
     print('Computing SqG anisotropy')
 
@@ -1998,81 +2000,27 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
                 SqG = pickle.load(f)
         else:
             raise ValueError("SqG filename must end with .npy or pkl")
-    else:
-        SqG = build_SqG(nkpts, nG, nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D)
+    elif compute_necessary_qG:
+        assert qG_norm_cutoff is not None
+        print("Computing only necessary SqG")
+        # Construct full qG grid
+        # qG_full = np.zeros((nG * nkpts, 3))
+        # for iq in range(qGrid.shape[0]):
+        #     qG = qGrid[iq, :] + GptGrid3D
+        #     start_idx = iq * nG
+        #     end_idx = (iq + 1) * nG
+        #     qG_full[start_idx:end_idx, :] = qG
+        #         qG_full = np.zeros((nG * nkpts, 3))
+        import time
+        temp_time  = time.time()
+        qG_full = np.einsum('ij,kj->ikj', qGrid, np.ones_like(GptGrid3D)).reshape(-1, 3) + np.tile(GptGrid3D, (qGrid.shape[0], 1))
 
-    # Assert SqG at the origin is nocc
-    assert np.abs(SqG[0, 0] - nocc) < 1e-4
-
-    if debug:
-        # section to manually compute exchange energy
-        qG_full = np.zeros((nG * nkpts, 3))
-        SqG_full = np.zeros(nG * nkpts)
-
-        for iq in range(qGrid.shape[0]):
-            qG = qGrid[iq, :] + GptGrid3D
-            start_idx = iq * nG
-            end_idx = (iq + 1) * nG
-            qG_full[start_idx:end_idx, :] = qG
-            SqG_full[start_idx:end_idx] = SqG[iq, :]
-
-        qG2 = np.linalg.norm(qG_full,axis=1)**2
-        summand = SqG_full/qG2
-        summand[np.isinf(summand)] = 0
-
-        b = cell.reciprocal_vectors()/nks
-        weights = abs(np.linalg.det(b))
-        weights *= 1/(2*np.pi)**3
-
-        E_ex = - 4 * np.pi * np.sum(summand) * weights
-        print(f'DEBUG: Exchange energy from SqG is {E_ex:.6f}')
-
-    #   Reciprocal lattice within the local domain
-    GptGrid3D_local = build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip)
-
-    #   location/index of GptGrid3D_local within 'GptGrid3D'
-    idx_GptGrid3D_local = []
-    for Gl in GptGrid3D_local:
-        idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
-        if len(idx_tmp) != 1:
-            raise TypeError("Cannot locate local G vector in the reciprocal lattice.")
-        else:
-            idx_GptGrid3D_local.append(idx_tmp[0])
-    idx_GptGrid3D_local = np.array(idx_GptGrid3D_local)
-
-    #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
-    SqG = SqG[:, idx_GptGrid3D_local]
-
-    # Fit Gaussian to data
-    nqG_local_3D = np.prod(N_local * nks)
-    N_local_3D = np.prod(N_local)
-    qG_full = np.zeros((nqG_local_3D, 3))
-    SqG_local_full = np.zeros(nqG_local_3D)
-
-    # Fill arrays with data
-    for iq in range(qGrid.shape[0]):
-        qG = qGrid[iq, :] + GptGrid3D_local
-        start_idx = iq * N_local_3D
-        end_idx = (iq + 1) * N_local_3D
-        qG_full[start_idx:end_idx, :] = qG
-        if fit_with_coul:
-            SqG_local_full[start_idx:end_idx] = SqG[iq, :]/np.sum(qG**2,axis=1)
-        else:
-            SqG_local_full[start_idx:end_idx] = SqG[iq, :]
-
-    # Remove inf and nan values
-    qG_full = qG_full[~np.isinf(SqG_local_full)]
-    SqG_local_full = SqG_local_full[~np.isinf(SqG_local_full)]
-
-    # Restrict fitting to qG with norm less than qG_norm_cutoff
-    if qG_norm_cutoff is not None:
         qG_norm = np.linalg.norm(qG_full,axis=1)
-
         if qG_norm_cutoff == "auto":
-            print("Automatically finding qG norm cutoff")
             # Find all unique norm(q+G)
+            print("Automatically finding qG norm cutoff")
             unique_qG_norms = np.unique(qG_norm)
-
+            unique_qG_norms = unique_qG_norms[:25]
             # For each unique norm, find the number of points at that norm
             num_points = []
             for norm in unique_qG_norms:
@@ -2080,26 +2028,133 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
 
             # Find the minimum norm that has at least 8 points
             qG_norm_cutoff = unique_qG_norms[np.argmax(np.array(num_points) >= 8)] + 1e-8
-
             print('Computed qG norm cutoff is', qG_norm_cutoff)
-
             if qG_norm_cutoff < 1e-8:
                 raise ValueError("qG_norm_cutoff is too small")
 
         print("Using qG norm cutoff, fitting to qG with norm less than", qG_norm_cutoff)
+
         # If norm cutoff within the Nlocal BZs, print warning
         if max(np.linalg.norm(cell.reciprocal_vectors()*N_local,axis=1)) < qG_norm_cutoff:
             print("NOTE: qG_norm_cutoff is outside the longest dimension of the NlocalBZs")
 
-        SqG_local_full = SqG_local_full[qG_norm < qG_norm_cutoff]
         qG_full = qG_full[qG_norm < qG_norm_cutoff]
+        print("Number of fitting points: ", qG_full.shape[0])
 
-        print("Number of fitting points: ", len(SqG_local_full))
+        temp_time2 = time.time()
+        print("Time to compute qG_full", temp_time2-temp_time)
+
+        SqG_local_full = build_SqG_k1k2_spec_qG(nkpts, nG, nbands, kGrid,kGrid, qG_full, mf, uKpts,uKpts, rptGrid3D,
+                                                dvol, NsCell)
+        assert np.abs(SqG_local_full[0] - nocc) < 1e-4
+        if fit_with_coul:
+            SqG_local_full= SqG_local_full/np.sum(qG_full**2,axis=1)
+
+        qG_full = qG_full[~np.isinf(SqG_local_full)]
+        SqG_local_full = SqG_local_full[~np.isinf(SqG_local_full)]
+
+    else:
+        SqG = build_SqG(nkpts, nG, nbands, kGrid, qGrid, mf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D)
+
+        # Assert SqG at the origin is nocc
+        assert np.abs(SqG[0, 0] - nocc) < 1e-4
+
+        if debug:
+            # section to manually compute exchange energy
+            qG_full = np.zeros((nG * nkpts, 3))
+            SqG_full = np.zeros(nG * nkpts)
+
+            for iq in range(qGrid.shape[0]):
+                qG = qGrid[iq, :] + GptGrid3D
+                start_idx = iq * nG
+                end_idx = (iq + 1) * nG
+                qG_full[start_idx:end_idx, :] = qG
+                SqG_full[start_idx:end_idx] = SqG[iq, :]
+
+            qG2 = np.linalg.norm(qG_full,axis=1)**2
+            summand = SqG_full/qG2
+            summand[np.isinf(summand)] = 0
+
+            b = cell.reciprocal_vectors()/nks
+            weights = abs(np.linalg.det(b))
+            weights *= 1/(2*np.pi)**3
+
+            E_ex = - 4 * np.pi * np.sum(summand) * weights
+            print(f'DEBUG: Exchange energy from SqG is {E_ex:.6f}')
+
+        #   Reciprocal lattice within the local domain
+        GptGrid3D_local = build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip)
+
+        #   location/index of GptGrid3D_local within 'GptGrid3D'
+        idx_GptGrid3D_local = []
+        for Gl in GptGrid3D_local:
+            idx_tmp = np.where(np.linalg.norm(Gl[None, :] - GptGrid3D, axis=1) < 1e-8)[0]
+            if len(idx_tmp) != 1:
+                raise TypeError("Cannot locate local G vector in the reciprocal lattice.")
+            else:
+                idx_GptGrid3D_local.append(idx_tmp[0])
+        idx_GptGrid3D_local = np.array(idx_GptGrid3D_local)
+
+        #   focus on S(q + G) with q in qGrid and G in GptGrid3D_local
+        SqG = SqG[:, idx_GptGrid3D_local]
+
+        # Fit Gaussian to data
+        nqG_local_3D = np.prod(N_local * nks)
+        N_local_3D = np.prod(N_local)
+        qG_full = np.zeros((nqG_local_3D, 3))
+        SqG_local_full = np.zeros(nqG_local_3D)
+
+        # Fill arrays with data
+        for iq in range(qGrid.shape[0]):
+            qG = qGrid[iq, :] + GptGrid3D_local
+            start_idx = iq * N_local_3D
+            end_idx = (iq + 1) * N_local_3D
+            qG_full[start_idx:end_idx, :] = qG
+            if fit_with_coul:
+                SqG_local_full[start_idx:end_idx] = SqG[iq, :]/np.sum(qG**2,axis=1)
+            else:
+                SqG_local_full[start_idx:end_idx] = SqG[iq, :]
+
+        # Remove inf and nan values
+        qG_full = qG_full[~np.isinf(SqG_local_full)]
+        SqG_local_full = SqG_local_full[~np.isinf(SqG_local_full)]
+
+        # Restrict fitting to qG with norm less than qG_norm_cutoff
+        if qG_norm_cutoff is not None:
+            qG_norm = np.linalg.norm(qG_full,axis=1)
+
+            if qG_norm_cutoff == "auto":
+                print("Automatically finding qG norm cutoff")
+                # Find all unique norm(q+G)
+                unique_qG_norms = np.unique(qG_norm)
+
+                # For each unique norm, find the number of points at that norm
+                num_points = []
+                for norm in unique_qG_norms:
+                    num_points.append(np.sum(qG_norm <= norm + 1e-8))
+
+                # Find the minimum norm that has at least 8 points
+                qG_norm_cutoff = unique_qG_norms[np.argmax(np.array(num_points) >= 8)] + 1e-8
+
+                print('Computed qG norm cutoff is', qG_norm_cutoff)
+
+                if qG_norm_cutoff < 1e-8:
+                    raise ValueError("qG_norm_cutoff is too small")
+
+            print("Using qG norm cutoff, fitting to qG with norm less than", qG_norm_cutoff)
+            # If norm cutoff within the Nlocal BZs, print warning
+            if max(np.linalg.norm(cell.reciprocal_vectors()*N_local,axis=1)) < qG_norm_cutoff:
+                print("NOTE: qG_norm_cutoff is outside the longest dimension of the NlocalBZs")
+
+            SqG_local_full = SqG_local_full[qG_norm < qG_norm_cutoff]
+            qG_full = qG_full[qG_norm < qG_norm_cutoff]
+
+            print("Number of fitting points: ", len(SqG_local_full))
 
     # Fit Gaussian to data
     params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
-                              force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
-                              auto_guess=auto_guess,method=fit_method)
+                             force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
+                             auto_guess=auto_guess,method=fit_method)
 
     # Extract sigma values or all parameters
     if return_all_params:
@@ -2258,7 +2313,7 @@ def build_SqG_k1k2_spec_qG(nkpts, nG, nbands, kGrid1, kGrid2, qG_full, kmf, uKpt
 
     for qG in range(qG_full.shape[0]):
         for k in range(nkpts):
-            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+            temp_SqG_k = 0 # Temporary storage for sums over m, n for the current k and q
 
             kpt1 = kGrid1[k, :]
             qGpt = qG_full[qG, :]
