@@ -2073,14 +2073,14 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
             # Find all unique norm(q+G)
             unique_qG_norms = np.unique(qG_norm)
 
-            # For each unique norm, find the number of points at that norm 
+            # For each unique norm, find the number of points at that norm
             num_points = []
             for norm in unique_qG_norms:
                 num_points.append(np.sum(qG_norm <= norm + 1e-8))
 
             # Find the minimum norm that has at least 8 points
             qG_norm_cutoff = unique_qG_norms[np.argmax(np.array(num_points) >= 8)] + 1e-8
-            
+
             print('Computed qG norm cutoff is', qG_norm_cutoff)
 
             if qG_norm_cutoff < 1e-8:
@@ -2095,7 +2095,7 @@ def compute_SqG_anisotropy(mf, cell, nks=np.array([3,3,3]), N_local=7, dim=3, dm
         qG_full = qG_full[qG_norm < qG_norm_cutoff]
 
         print("Number of fitting points: ", len(SqG_local_full))
-        
+
     # Fit Gaussian to data
     params = fit_function_3d(qG_full, SqG_local_full, nocc, subtract_nocc=False, num_gaussians=num_gaussians,
                               force_centered=force_centered, force_isotropic=force_isotropic,with_coul=fit_with_coul,
@@ -2150,6 +2150,7 @@ def closest_fbz_distance(Lvec_recip,N_local):
     r1 = np.min(N_local*distances) #must be scaled by nlocal
     return r1, pairs[np.argmin(distances)]
 
+
 def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCell, GptGrid3D, nks=[1,1,1],
               subtract_nocc=0, debug_options={}):
 
@@ -2158,18 +2159,16 @@ def build_SqG(nkpts, nG, nbands, kGrid, qGrid, kmf, uKpts, rptGrid3D, dvol, NsCe
 
 
 def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, rptGrid3D, dvol, NsCell,
-                   GptGrid3D, nks=[1,1,1], subtract_nocc=0, debug_options={}):
+                   GptGrid3D, subtract_nocc=0, nks=[1,1,1], debug_options={}):
 
-    import os
     import numpy as np
     import scipy.io
     import time
-    import pymp
 
     build_SqG_start_time = time.time()
     # SqG = pymp.shared.array((nkpts, nG), dtype=np.float64)
     SqG = np.zeros((nkpts, nG), dtype=np.float64)
-    print("SqG MEM USAGE (KB) IS: {:.3f}".format( SqG.nbytes / (1024)))
+    print("SqG MEM USAGE (KB) IS: {:.3f}".format(SqG.nbytes / (1024)))
 
     # nthreads = int(os.environ['OMP_NUM_THREADS'])
     # with pymp.Parallel(np.min([nthreads, 4])) as p:
@@ -2202,6 +2201,11 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
                     u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts2[idx_kpt2, m, :]
                     rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
                     temp_fft = np.fft.fftn((rho12 * dvol))
+                    # temp_fft = scipy.fft.fftn((rho12 * dvol),workers=1)
+
+                    # rho12 = np.conj(u1) * u2
+                    # temp_fft = tools.fft((rho12 * dvol),NsCell)
+
                     temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
 
             SqG[q, :] += temp_SqG_k / nkpts
@@ -2220,8 +2224,10 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
 
         if 'mat' in debug_options['filetype']:
             print('Saving qG mat files requested')
-            scipy.io.savemat(debug_options['prefix'] + 'qG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"qG_full": qG_full})
-            scipy.io.savemat(debug_options['prefix'] + 'SqG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat', {"SqG_full": SqG_full})
+            scipy.io.savemat(debug_options['prefix'] + 'qG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat',
+                             {"qG_full": qG_full})
+            scipy.io.savemat(debug_options['prefix'] + 'SqG_full_nk' + str(nks[0]) + str(nks[1]) + str(nks[2]) + '.mat',
+                             {"SqG_full": SqG_full})
         if 'pkl' in debug_options['filetype']:
             print('Saving qG pkl files requested')
             import pickle
@@ -2236,6 +2242,50 @@ def build_SqG_k1k2(nkpts, nG, nbands, kGrid1,kGrid2, qGrid, kmf, uKpts1,uKpts2, 
         # raise ValueError('Debugging requested, halting calculation')
 
     return SqG
+
+
+def build_SqG_k1k2_spec_qG(nkpts, nG, nbands, kGrid1, kGrid2, qG_full, kmf, uKpts1,uKpts2, rptGrid3D, dvol,
+                           NsCell):
+
+    import numpy as np
+    import time
+
+    build_SqG_start_time = time.time()
+    # SqG = pymp.shared.array((nkpts, nG), dtype=np.float64)
+    nqG = qG_full.shape[0]
+    SqG_full = np.zeros(nqG, dtype=np.float64)
+    print("SqG MEM USAGE (KB) IS: {:.3f}".format(SqG_full.nbytes / (1024)))
+
+    for qG in range(qG_full.shape[0]):
+        for k in range(nkpts):
+            temp_SqG_k = np.zeros(nG, dtype=np.float64)  # Temporary storage for sums over m, n for the current k and q
+
+            kpt1 = kGrid1[k, :]
+            qGpt = qG_full[qG, :]
+            kpt2 = kpt1 + qGpt
+
+            # Locate kpt2 index
+            kpt2_BZ = minimum_image(kmf.cell, kpt2)
+            idx_kpt2 = np.where(np.sum((kGrid2 - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
+            if len(idx_kpt2) != 1:
+                raise TypeError("Cannot locate (k+q) in the kmesh.")
+            idx_kpt2 = idx_kpt2[0]
+            kGdiff = kpt2 - kpt2_BZ
+
+            for n in range(nbands):
+                for m in range(nbands):
+                    u1 = uKpts1[k, n, :]
+                    u2 = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1))))) * uKpts2[idx_kpt2, m, :]
+                    rho12 = np.reshape(np.conj(u1) * u2, (NsCell[0], NsCell[1], NsCell[2]))
+                    # temp_fft = np.fft.fftn((rho12 * dvol))
+                    # temp_SqG_k += np.abs(temp_fft.reshape(-1)) ** 2
+                    temp_SqG_k += np.abs(np.sum(rho12*dvol))**2
+
+            SqG_full[qG] += temp_SqG_k / nkpts
+
+    build_SqG_end_time = time.time()
+    print(f"Time to build SqG: {build_SqG_end_time - build_SqG_start_time} s")
+    return SqG_full
 
 def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
               localizer=None, r1_prefactor=1.0, fourier_only=False, subtract_nocc=0,
@@ -2280,7 +2330,6 @@ def khf_ss_3d(kmf, nks, uKpts, ex_standard, ex_madelung, N_local=3, debug=False,
     nks = np.array(nks)
     nocc = cell.tot_electrons() // 2
     nkpts = np.prod(nks)
-    dim = 3
 
     if subtract_nocc == 2:
         if subtract_nocc_gauss_params is None:
