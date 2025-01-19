@@ -1715,6 +1715,9 @@ def build_N_local_grid(N_local_x, N_local_y, N_local_z, Lvec_recip):
     return GptGrid3D_local
 
 
+# Define polynomial_model
+
+
 # Define contracted gaussian model
 def contracted_gaussian_model(params, xyz, num_gaussians=1):
     # Define Gaussian model function
@@ -1792,6 +1795,39 @@ def contracted_gaussian_model_centered(params, xyz, num_gaussians=1,isotropic=Fa
             result += c_i * gaussian_model([sigma_x, sigma_y, sigma_z], xyz)
 
     return result
+
+
+def even_polynomial_model(params, xyz, deg):
+    # Define polynomial model function
+    # xyz in shape (n, 3)
+    r = np.linalg.norm(xyz, axis=1)
+    c = np.zeros(deg+1)
+    c[:2:] = params
+    return np.polynomial.polynomial.polyval(r, c)
+
+
+def fit_polynomial_3d(xyz_input, f_input, nocc, deg, method="scipy_minimize"):
+    assert deg % 2 == 0
+    nterms = deg//2 # excludes the constant term
+    params_final = np.zeros(deg//2+1)
+    from scipy.optimize import least_squares,minimize
+    params_final[0] = 1
+
+    for n in range(1,nterms+1):
+        d = 2*n
+        computed_c = params_final[:n]
+        def residuals(c_n, xyz, f):
+            params = computed_c.extend(c_n)
+            return np.sum((even_polynomial_model(params, xyz, d) - f) ** 2)
+        initial_guess = (-1)**n / (np.math.factorial(n))
+        if method == "scipy_minimize":
+            result = minimize(residuals, initial_guess, args=(xyz_input, f_input/nocc))
+            params = result.x
+
+
+        params_final[n] = params
+    return params_final
+
 
 def fit_function_3d(xyz_input, f_input, nocc, subtract_nocc=False, num_gaussians=1, force_isotropic=False,
                      force_centered=False, with_coul=False, auto_guess=True, method="scipy_minimize"):
@@ -2312,31 +2348,30 @@ def build_SqG_k1k2_spec_qG(nkpts, nG, nbands, kGrid1, kGrid2, qG_full, kmf, uKpt
     print("SqG MEM USAGE (KB) IS: {:.3f}".format(SqG_full.nbytes / (1024)))
 
     for qG in range(qG_full.shape[0]):
-        for k in range(nkpts):
+        for k1 in range(nkpts):
             temp_SqG_k = 0 # Temporary storage for sums over m, n for the current k and q
 
-            kpt1 = kGrid1[k, :]
+            kpt1 = kGrid1[k1, :]
             qGpt = qG_full[qG, :]
             kpt2 = kpt1 + qGpt
 
             # Locate kpt2 index
             kpt2_BZ = minimum_image(kmf.cell, kpt2)
-            idx_kpt2 = np.where(np.sum((kGrid2 - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
-            if len(idx_kpt2) != 1:
+            k2 = np.where(np.sum((kGrid2 - kpt2_BZ[None, :]) ** 2, axis=1) < 1e-8)[0]
+            if len(k2) != 1:
                 raise TypeError("Cannot locate (k+q) in the kmesh.")
-            idx_kpt2 = idx_kpt2[0]
+            k2 = k2[0]
             kGdiff = kpt2 - kpt2_BZ
 
 
             exp_term = np.squeeze(np.exp(-1j * (rptGrid3D @ np.reshape(kGdiff, (-1, 1)))))
-            conj_u1 = np.conj(uKpts1[k, :, :]) # nocc * nG
-            u2 = exp_term * uKpts2[idx_kpt2, :, :]
-            
+            conj_u1 = np.conj(uKpts1[k1, :, :]) # nocc * nG
+            u2 = exp_term * uKpts2[k2, :, :]
+
             rho12 = np.abs(conj_u1 @ u2.T)**2
             temp_SqG_k = np.sum(rho12) * dvol**2
-            
+
             SqG_full[qG] += temp_SqG_k / nkpts
-            
 
     build_SqG_end_time = time.time()
     print(f"Time to build SqG: {build_SqG_end_time - build_SqG_start_time} s")
